@@ -69,7 +69,7 @@ HAL_StatusTypeDef PrepareBufferForSingleLed(uint16_t LedIndex, uint8_t LedDmaInd
   return HAL_OK;
 }
 
-void LedPrepareDmaStructStruct(SECTION_COLORS *Colors, uint8_t SectionIndex, uint8_t ColorIndex)
+void LedPrepareDmaColorStruct(SECTION_COLORS *Colors, uint8_t SectionIndex, uint8_t ColorIndex)
 {
   switch (SectionIndex)
   {
@@ -120,7 +120,7 @@ HAL_StatusTypeDef LedTransferColorsBySections(TIM_HandleTypeDef *htim, SECTION_C
   return HAL_OK;
 }
 
-void LedPrepareDataForDma()
+void LedInitializeDataForDma()
 {
   memset(&gSectionColors, 0, sizeof(SECTION_COLORS));
   gLedIndex = LED_COUNT;

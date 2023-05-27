@@ -56,12 +56,12 @@ typedef struct
 //
 // Before calling any other function call prepare data first
 //
-void LedPrepareDataForDma();
+void LedInitializeDataForDma();
 
 //
 // To easily change colors of each section call this function to prepare struct for each section
 //
-void LedPrepareDmaStructStruct(SECTION_COLORS *Colors, uint8_t SectionIndex, uint8_t ColorIndex);
+void LedPrepareDmaColorStruct(SECTION_COLORS *Colors, uint8_t SectionIndex, uint8_t ColorIndex);
 HAL_StatusTypeDef LedTransferColorsBySections(TIM_HandleTypeDef *htim, SECTION_COLORS *SectionColors);
 void LedHandleDmaCallback(TIM_HandleTypeDef *htim);
 
