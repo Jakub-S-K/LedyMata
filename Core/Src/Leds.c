@@ -63,7 +63,7 @@ HAL_StatusTypeDef PrepareBufferForSingleLed(uint16_t LedIndex, uint8_t LedDmaInd
 
   for (DmaBufferIndex = LED_BIT_COUNT * LedDmaIndex; DmaBufferIndex < LED_BIT_COUNT * LedDmaIndex + LED_BIT_COUNT; DmaBufferIndex++)
   {
-    gLedBuffer[DmaBufferIndex] = ((*(ColorTable + (DmaBufferIndex / 8)) * LED_BRIGHTNESS) / 100) >> (7 - (DmaBufferIndex % 8)) & 0x1;
+    gLedBuffer[DmaBufferIndex] = (((*(ColorTable + (DmaBufferIndex / 8)) * LED_BRIGHTNESS) / 100) >> (7 - (DmaBufferIndex % 8)) & 0x1 * 30) + 30;
   }
 
   return HAL_OK;
