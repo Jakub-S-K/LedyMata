@@ -1,0 +1,7 @@
+main.c:87:6:HAL_TIM_PWM_PulseFinishedCallback	2
+main.c:98:6:HAL_TIM_PWM_PulseFinishedHalfCpltCallback	2
+main.c:112:9:MapAdcDmaIndexToLedSection	1
+main.c:126:6:HAL_ADC_ConvCpltCallback	3
+main.c:229:6:SystemClock_Config	4
+main.c:168:5:main	13
+main.c:473:6:Error_Handler	1

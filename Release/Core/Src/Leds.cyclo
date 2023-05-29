@@ -1,0 +1,6 @@
+Leds.c:28:10:GetCurrentSectionIndex	4
+Leds.c:51:19:PrepareBufferForSingleLed	7
+Leds.c:95:6:LedPrepareDmaColorStruct	6
+Leds.c:117:19:LedTransferColorsBySections	5
+Leds.c:149:6:LedInitializeDataForDma	1
+Leds.c:161:6:LedHandleDmaCallback	4
