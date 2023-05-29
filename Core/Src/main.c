@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "Leds.h"
+#include <memory.h>
 
 /* USER CODE END Includes */
 
@@ -32,7 +33,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define ADC_CHANNEL_COUNT 4
-#define ADC_DMA_BUFFER_SIZE (ADC_CHANNEL_COUNT * 2)
+#define ADC_DMA_BUFFER_SIZE (ADC_CHANNEL_COUNT)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -64,9 +65,14 @@ static void MX_TIM1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+uint8_t gInterruptCounter = 0;
+uint8_t gInterruptCounterHalf = 0;
+uint8_t gInterruptCounterFull = 0;
 
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 {
+  gInterruptCounter++;
+gInterruptCounterFull++;
   if (htim != &htim1) {
     return;
   }
@@ -76,6 +82,8 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 
 void HAL_TIM_PWM_PulseFinishedHalfCpltCallback(TIM_HandleTypeDef *htim)
 {
+  gInterruptCounter++;
+gInterruptCounterHalf++;
   if (htim != &htim1) {
     return;
   }
@@ -100,41 +108,6 @@ uint8_t MapAdcDmaIndexToLedSection(uint8_t AdcChannel) {
   return 0xFF;
 }
 
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc)
-{
-  uint8_t Index;
-  uint8_t Section;
-  SECTION_COLORS Colors;
-  uint8_t Color;
-
-  if (hadc != &hadc1) {
-    return;
-  }
-
-  LedPrepareDmaColorStruct(&Colors, SECTION_INDEX_CENTER, COLOR_INDEX_GREEN);
-
-  for (Index = 0; Index < ADC_CHANNEL_COUNT; Index++) {
-    Section = MapAdcDmaIndexToLedSection(Index);
-    if (Section) {
-      // TODO, can signal red lights if they work
-      return;
-    }
-
-    if (gAdcBuffer[Index] >= ADC_MINIMUM_VALUE) {
-      Color = COLOR_INDEX_BLUE;
-    } else {
-      Color = COLOR_INDEX_WHITE;
-    }
-    LedPrepareDmaColorStruct(&Colors, Section, Color);
-  }
-
-  if (LedTransferColorsBySections(&htim1, &Colors) != HAL_OK) {
-    return;
-  }
-
-  SendButtonsPressedUsb();
-}
-
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
   uint8_t Index;
@@ -150,12 +123,12 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 
   for (Index = 0; Index < ADC_CHANNEL_COUNT; Index++) {
     Section = MapAdcDmaIndexToLedSection(Index);
-    if (Section) {
+    if (Section == 0xFF) {
       // TODO, can signal red lights if they work
       return;
     }
 
-    if (gAdcBuffer[Index + ADC_CHANNEL_COUNT] >= ADC_MINIMUM_VALUE) {
+    if (gAdcBuffer[Index] >= ADC_MINIMUM_VALUE) {
       Color = COLOR_INDEX_BLUE;
     } else {
       Color = COLOR_INDEX_WHITE;
@@ -163,11 +136,12 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     LedPrepareDmaColorStruct(&Colors, Section, Color);
   }
 
+  // Send only if colors are different
   if (LedTransferColorsBySections(&htim1, &Colors) != HAL_OK) {
     return;
   }
 
-  SendButtonsPressedUsb();
+//  SendButtonsPressedUsb();
 }
 
 /* USER CODE END 0 */
@@ -205,10 +179,12 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+  HAL_SuspendTick();
+  memset (&gAdcBuffer, 0, sizeof (gAdcBuffer));
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)gAdcBuffer, ADC_DMA_BUFFER_SIZE); // start adc in DMA mode
 
-  HAL_PWR_EnableSleepOnExit();
-  HAL_PWR_EnterSLEEPMode(0, PWR_SLEEPENTRY_WFI);
+  // HAL_PWR_EnableSleepOnExit();
+  // HAL_PWR_EnterSLEEPMode(0, PWR_SLEEPENTRY_WFI);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -365,7 +341,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 72-1;
+  htim1.Init.Period = 90;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -432,13 +408,13 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
   /* DMA1_Channel2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
   /* DMA1_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 1, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }

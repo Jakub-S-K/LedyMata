@@ -2,6 +2,20 @@
 
 #include <memory.h>
 
+#define SECTION_UP_LED_COUNT 18
+#define SECTION_DOWN_LED_COUNT 18
+#define SECTION_LEFT_LED_COUNT 18
+#define SECTION_RIGHT_LED_COUNT 18
+#define SECTION_CENTER_LED_COUNT 24
+#define LED_COUNT (SECTION_UP_LED_COUNT + SECTION_DOWN_LED_COUNT + SECTION_LEFT_LED_COUNT + SECTION_RIGHT_LED_COUNT + SECTION_CENTER_LED_COUNT)
+
+typedef struct
+{
+  uint8_t Green;
+  uint8_t Red;
+  uint8_t Blue;
+} COLOR;
+
 uint16_t gLedBuffer[LED_DMA_BUFFER_SIZE];
 uint8_t gSectionColorIndex[SECTION_COUNT];
 SECTION_COLORS gSectionColors;
@@ -24,10 +38,14 @@ uint16_t GetCurrentSectionIndex(uint16_t LedIndex)
       return Index;
     }
 
+    if (Index + 1 == SECTION_COUNT) {
+      return 0xFF;
+    }
+
     MinLedIndex += gSectionLedCounts[Index];
-    MaxLedIndex += gSectionLedCounts[Index];
+    MaxLedIndex += gSectionLedCounts[Index + 1];
   }
-  return Index;
+  return 0xFF;
 }
 
 HAL_StatusTypeDef PrepareBufferForSingleLed(uint16_t LedIndex, uint8_t LedDmaIndex)
@@ -35,6 +53,7 @@ HAL_StatusTypeDef PrepareBufferForSingleLed(uint16_t LedIndex, uint8_t LedDmaInd
   uint8_t SectionIndex = GetCurrentSectionIndex(gLedIndex);
   uint8_t DmaBufferIndex;
   uint8_t *ColorTable;
+  uint8_t ColorValue;
 
   switch (SectionIndex)
   {
@@ -63,7 +82,11 @@ HAL_StatusTypeDef PrepareBufferForSingleLed(uint16_t LedIndex, uint8_t LedDmaInd
 
   for (DmaBufferIndex = LED_BIT_COUNT * LedDmaIndex; DmaBufferIndex < LED_BIT_COUNT * LedDmaIndex + LED_BIT_COUNT; DmaBufferIndex++)
   {
-    gLedBuffer[DmaBufferIndex] = (((*(ColorTable + (DmaBufferIndex / 8)) * LED_BRIGHTNESS) / 100) >> (7 - (DmaBufferIndex % 8)) & 0x1 * 30) + 30;
+    ColorValue = *(ColorTable + ((DmaBufferIndex % LED_BIT_COUNT) / 8));
+    ColorValue = (ColorValue * LED_BRIGHTNESS) / 100;
+    ColorValue = ColorValue >> (7 - (DmaBufferIndex % 8));
+    ColorValue = ((ColorValue & 0x1) * 30) + 30;
+    gLedBuffer[DmaBufferIndex] = ColorValue;
   }
 
   return HAL_OK;
@@ -95,6 +118,9 @@ HAL_StatusTypeDef LedTransferColorsBySections(TIM_HandleTypeDef *htim, SECTION_C
 {
   uint8_t Index;
 
+  if (memcmp(SectionColors, &gSectionColors, sizeof(SECTION_COLORS)) == 0) {
+    return HAL_OK;
+  }
   //
   // It indicates that there is ongoing transfer
   //
@@ -140,6 +166,7 @@ void LedHandleDmaCallback(TIM_HandleTypeDef *htim)
   {
     HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_1);
     gStopLedDmaTransffer = 0;
+    gLedIndex = LED_COUNT;
   }
 
   for (Index = 0; Index < (LED_DMA_BUFFER_COUNT >> 1); Index++)
