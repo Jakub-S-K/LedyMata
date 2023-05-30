@@ -37,6 +37,25 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 /* USER CODE BEGIN PD */
 #define ADC_CHANNEL_COUNT 4
 #define ADC_DMA_BUFFER_SIZE (ADC_CHANNEL_COUNT)
+#define ADC_INDEX_UP 0
+#define ADC_INDEX_DOWN 1
+#define ADC_INDEX_LEFT 2
+#define ADC_INDEX_RIGHT 3
+
+#define ADC_MINIMAL_UP 400
+#define ADC_MINIMAL_DOWN 400
+#define ADC_MINIMAL_LEFT 400
+#define ADC_MINIMAL_RIGHT 400
+
+static_assert(ADC_INDEX_UP != ADC_INDEX_DOWN);
+static_assert(ADC_INDEX_DOWN != ADC_INDEX_LEFT);
+static_assert(ADC_INDEX_LEFT != ADC_INDEX_RIGHT);
+static_assert(ADC_INDEX_RIGHT != ADC_INDEX_UP);
+
+static_assert(ADC_INDEX_UP < ADC_CHANNEL_COUNT);
+static_assert(ADC_INDEX_DOWN < ADC_CHANNEL_COUNT);
+static_assert(ADC_INDEX_LEFT < ADC_CHANNEL_COUNT);
+static_assert(ADC_INDEX_RIGHT < ADC_CHANNEL_COUNT);
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -54,6 +73,8 @@ DMA_HandleTypeDef hdma_tim1_ch2;
 
 /* USER CODE BEGIN PV */
 uint16_t gAdcBuffer[ADC_DMA_BUFFER_SIZE];
+uint16_t gAdcMinimalValues[ADC_CHANNEL_COUNT];
+uint8_t gAdcToSectionMapping[ADC_CHANNEL_COUNT];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -87,72 +108,78 @@ struct {
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 {
   gInterruptCounter++;
-gInterruptCounterFull++;
+  gInterruptCounterFull++;
   if (htim != &htim1) {
     return;
   }
 
-  LedHandleDmaCallback(htim);
+  if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+    LedHandleDmaCh1Callback(htim);
+  } else {
+    LedHandleDmaCh2Callback(htim);
+  }
 }
 
 void HAL_TIM_PWM_PulseFinishedHalfCpltCallback(TIM_HandleTypeDef *htim)
 {
   gInterruptCounter++;
-gInterruptCounterHalf++;
+  gInterruptCounterHalf++;
   if (htim != &htim1) {
     return;
   }
 
-  LedHandleDmaCallback(htim);
+  if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+    LedHandleDmaCh1Callback(htim);
+  } else {
+    LedHandleDmaCh2Callback(htim);
+  }
 }
 
 #define ADC_MINIMUM_VALUE 800
 
-// TODO, change it according to setup
-uint8_t MapAdcDmaIndexToLedSection(uint8_t AdcChannel) {
-  switch (AdcChannel) {
-    case 0:
-      return SECTION_INDEX_UP;
-    case 1:
-      return SECTION_INDEX_DOWN;
-    case 2:
-      return SECTION_INDEX_LEFT;
-    case 3:
-      return SECTION_INDEX_RIGHT;
-  }
-  return 0xFF;
+void AdcInitializeData(void) {
+  memset (&gAdcBuffer, 0, sizeof (gAdcBuffer));
+ gAdcMinimalValues[ADC_INDEX_UP] = ADC_MINIMAL_UP;
+ gAdcMinimalValues[ADC_INDEX_DOWN] = ADC_MINIMAL_DOWN;
+ gAdcMinimalValues[ADC_INDEX_LEFT] = ADC_MINIMAL_LEFT;
+ gAdcMinimalValues[ADC_INDEX_RIGHT] = ADC_MINIMAL_RIGHT;
+ gAdcToSectionMapping[ADC_INDEX_UP] = SECTION_INDEX_UP;
+ gAdcToSectionMapping[ADC_INDEX_DOWN] = SECTION_INDEX_DOWN;
+ gAdcToSectionMapping[ADC_INDEX_LEFT] = SECTION_INDEX_LEFT;
+ gAdcToSectionMapping[ADC_INDEX_RIGHT] = SECTION_INDEX_RIGHT;
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
-  uint8_t Index;
+  uint8_t AdcChannel;
   uint8_t Section;
-  SECTION_COLORS Colors;
+  uint8_t ColorsCh1[LED_CH1_SECTION_COUNT];
+  uint8_t ColorsCh2[LED_CH2_SECTION_COUNT];
   uint8_t Color;
 
   if (hadc != &hadc1) {
     return;
   }
 
-  LedPrepareDmaColorStruct(&Colors, SECTION_INDEX_CENTER, COLOR_INDEX_GREEN);
-
-  for (Index = 0; Index < ADC_CHANNEL_COUNT; Index++) {
-    Section = MapAdcDmaIndexToLedSection(Index);
-    if (Section == 0xFF) {
-      // TODO, can signal red lights if they work
-      return;
-    }
-
-    if (gAdcBuffer[Index] >= ADC_MINIMUM_VALUE) {
+  for (AdcChannel = 0; AdcChannel < ADC_CHANNEL_COUNT; AdcChannel++) {
+    Section = gAdcToSectionMapping[AdcChannel];
+    if (gAdcBuffer[AdcChannel] >= gAdcMinimalValues[AdcChannel]) {
       Color = COLOR_INDEX_BLUE;
     } else {
       Color = COLOR_INDEX_WHITE;
     }
-    LedPrepareDmaColorStruct(&Colors, Section, Color);
+    if (AdcChannel == ADC_INDEX_RIGHT || AdcChannel == ADC_INDEX_UP) {
+      ColorsCh1[Section] = Color;
+    } else {
+      ColorsCh2[Section] = Color;
+    }
   }
 
-  // Send only if colors are different
-  if (LedTransferColorsBySections(&htim1, &Colors) != HAL_OK) {
+  if (LedTransferColorsBySectionsCh1(&htim1, ColorsCh1) != HAL_OK) {
+    return;
+  }
+
+  if (LedTransferColorsBySectionsCh2(&htim1, ColorsCh2) != HAL_OK) {
     return;
   }
 
@@ -195,26 +222,23 @@ int main(void)
   MX_TIM1_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-  //HAL_SuspendTick();
-  memset (&gAdcBuffer, 0, sizeof (gAdcBuffer));
+  HAL_Delay(2000);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)gAdcBuffer, ADC_DMA_BUFFER_SIZE); // start adc in DMA mode
 
   gButtonState.value = 0;
-  USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, &gButtonState, sizeof(gButtonState));
+  USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t*)&gButtonState, sizeof(gButtonState));
 
-
-
-  // HAL_PWR_EnableSleepOnExit();
-  // HAL_PWR_EnterSLEEPMode(0, PWR_SLEEPENTRY_WFI);
+  HAL_PWR_EnableSleepOnExit();
+  HAL_PWR_EnterSLEEPMode(0, PWR_SLEEPENTRY_WFI);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_Delay(500);
-	    gButtonState.value = 0b0101;
-	    USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, &gButtonState, sizeof(gButtonState));
+	  // HAL_Delay(500);
+	  //   gButtonState.value = 0b0101;
+	  //   USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t*)&gButtonState, sizeof(gButtonState));
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -366,7 +390,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 72-1;
+  htim1.Init.Period = 90;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
