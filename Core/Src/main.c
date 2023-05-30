@@ -18,19 +18,18 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "Leds.h"
 #include <memory.h>
-#include "usbd_customhid.h"
+//#include "usbd_customhid.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-extern USBD_HandleTypeDef hUsbDeviceFS;
+//extern USBD_HandleTypeDef hUsbDeviceFS;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -220,13 +219,12 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM1_Init();
-  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(2000);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)gAdcBuffer, ADC_DMA_BUFFER_SIZE); // start adc in DMA mode
 
   gButtonState.value = 0;
-  USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t*)&gButtonState, sizeof(gButtonState));
+//  USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t*)&gButtonState, sizeof(gButtonState));
 
   HAL_PWR_EnableSleepOnExit();
   HAL_PWR_EnterSLEEPMode(0, PWR_SLEEPENTRY_WFI);
@@ -284,9 +282,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC|RCC_PERIPHCLK_USB;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
   PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
-  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();

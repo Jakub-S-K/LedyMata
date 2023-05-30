@@ -194,7 +194,7 @@ void LedHandleDmaCh1Callback(TIM_HandleTypeDef *htim)
 
   for (Index = 0; Index < (LED_DMA_BUFFER_COUNT >> 1); Index++)
   {
-    if (PrepareBufferForSingleLed(gLedBufferCh1Index, gLedDmaCh1Index, TIM_CHANNEL_1, gLedBufferCh1, gSectionCh2Colors) != HAL_OK)
+    if (PrepareBufferForSingleLed(gLedBufferCh1Index, gLedDmaCh1Index, TIM_CHANNEL_1, gLedBufferCh1, gSectionCh1Colors) != HAL_OK)
     {
       gStopLedDmaCh1Transffer = 1;
       return;
