@@ -6,13 +6,6 @@
 
 typedef struct
 {
-  uint8_t LedAmount;
-  uint8_t LedColorIndex;
-  uint8_t Brightness;
-} LED_SECTION;
-
-typedef struct
-{
   uint8_t Green;
   uint8_t Red;
   uint8_t Blue;
@@ -25,7 +18,7 @@ typedef struct
   uint8_t Brightness;
 } LED_SECTION_COLOR;
 
-LED_SECTION *GetLedSection(uint8_t ChannelIndex, uint8_t SectionIndex);
+LED_SECTION_COLOR *GetLedSection(uint8_t ChannelIndex, uint8_t SectionIndex);
 void InitializeLedConfigs(
     const uint8_t NumberOfLedConfigurations);
 void InitializeLedSection(const uint8_t LedConfigIndex,

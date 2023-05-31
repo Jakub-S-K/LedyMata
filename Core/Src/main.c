@@ -94,6 +94,9 @@ uint16_t gAdcBuffer[ADC_DMA_BUFFER_SIZE];
 uint16_t gAdcMinimalValues[ADC_CHANNEL_COUNT];
 uint8_t gAdcToSectionMapping[ADC_CHANNEL_COUNT];
 uint8_t gAdcToChannelMapping[ADC_CHANNEL_COUNT];
+
+// G, R, B
+const COLOR gColor[] = {{0xFF, 0xFF, 0xFF}, {0, 0, 0xFF}, {0, 0xFF, 0}, {0xFF, 0, 0}};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -153,7 +156,7 @@ void HandleDmaCallback(TIM_HandleTypeDef *htim)
     }
     else
     {
-      HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, DMA_BUFFER_SIZE);
+      // HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, DMA_BUFFER_SIZE);
       StopDmaCh1 = HandleDmaCircularMode(
           0,
           gLedCh1Buffer,
@@ -172,7 +175,7 @@ void HandleDmaCallback(TIM_HandleTypeDef *htim)
     }
     else
     {
-      HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, DMA_BUFFER_SIZE);
+      // HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, DMA_BUFFER_SIZE);
       StopDmaCh2 = HandleDmaCircularMode(
           0,
           gLedCh2Buffer,
@@ -254,12 +257,16 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     ButtonState = GetButtonState(AdcChannel);
     if (ButtonState == 1)
     {
-      GetLedSection(DmaChannel, Section)->LedColorIndex = 1;
+      GetLedSection(DmaChannel, Section)->LedColor.Blue = 0xFF;
+      GetLedSection(DmaChannel, Section)->LedColor.Green = 0;
+      GetLedSection(DmaChannel, Section)->LedColor.Red = 0;
       UpdateUsb = 1;
     }
     else if (ButtonState == 0)
     {
-      GetLedSection(DmaChannel, Section)->LedColorIndex = 0;
+      GetLedSection(DmaChannel, Section)->LedColor.Blue = 0xFF;
+      GetLedSection(DmaChannel, Section)->LedColor.Green = 0xFF;
+      GetLedSection(DmaChannel, Section)->LedColor.Red = 0xFF;
       UpdateUsb = 1;
     }
   }
@@ -324,19 +331,29 @@ int main(void)
   InitializeLedSection(SECTION_CHANNEL_UP, 3);
 
   GetLedSection(SECTION_CHANNEL_LEFT, SECTION_INDEX_LEFT)->LedAmount = 18;
-  GetLedSection(SECTION_CHANNEL_LEFT, SECTION_INDEX_LEFT)->LedColorIndex = 0;
+  GetLedSection(SECTION_CHANNEL_LEFT, SECTION_INDEX_LEFT)->LedColor.Blue = 0xFF;
+  GetLedSection(SECTION_CHANNEL_LEFT, SECTION_INDEX_LEFT)->LedColor.Red = 0xFF;
+  GetLedSection(SECTION_CHANNEL_LEFT, SECTION_INDEX_LEFT)->LedColor.Green = 0xFF;
 
   GetLedSection(SECTION_CHANNEL_DOWN, SECTION_INDEX_DOWN)->LedAmount = 18;
-  GetLedSection(SECTION_CHANNEL_DOWN, SECTION_INDEX_DOWN)->LedColorIndex = 0;
+  GetLedSection(SECTION_CHANNEL_DOWN, SECTION_INDEX_DOWN)->LedColor.Blue = 0xFF;
+  GetLedSection(SECTION_CHANNEL_DOWN, SECTION_INDEX_DOWN)->LedColor.Red = 0xFF;
+  GetLedSection(SECTION_CHANNEL_DOWN, SECTION_INDEX_DOWN)->LedColor.Green = 0xFF;
 
   GetLedSection(SECTION_CHANNEL_UP, SECTION_INDEX_UP)->LedAmount = 18;
-  GetLedSection(SECTION_CHANNEL_UP, SECTION_INDEX_UP)->LedColorIndex = 0;
+  GetLedSection(SECTION_CHANNEL_UP, SECTION_INDEX_UP)->LedColor.Blue = 0xFF;
+  GetLedSection(SECTION_CHANNEL_UP, SECTION_INDEX_UP)->LedColor.Red = 0xFF;
+  GetLedSection(SECTION_CHANNEL_UP, SECTION_INDEX_UP)->LedColor.Green = 0xFF;
 
   GetLedSection(SECTION_CHANNEL_RIGHT, SECTION_INDEX_RIGHT)->LedAmount = 18;
-  GetLedSection(SECTION_CHANNEL_RIGHT, SECTION_INDEX_RIGHT)->LedColorIndex = 0;
+  GetLedSection(SECTION_CHANNEL_RIGHT, SECTION_INDEX_RIGHT)->LedColor.Blue = 0xFF;
+  GetLedSection(SECTION_CHANNEL_RIGHT, SECTION_INDEX_RIGHT)->LedColor.Red = 0xFF;
+  GetLedSection(SECTION_CHANNEL_RIGHT, SECTION_INDEX_RIGHT)->LedColor.Green = 0xFF;
 
   GetLedSection(SECTION_CHANNEL_CENTER, SECTION_INDEX_CENTER)->LedAmount = 24;
-  GetLedSection(SECTION_CHANNEL_CENTER, SECTION_INDEX_CENTER)->LedColorIndex = 2;
+  GetLedSection(SECTION_CHANNEL_CENTER, SECTION_INDEX_CENTER)->LedColor.Blue = 50;
+  GetLedSection(SECTION_CHANNEL_CENTER, SECTION_INDEX_CENTER)->LedColor.Red = 0xFF;
+  GetLedSection(SECTION_CHANNEL_CENTER, SECTION_INDEX_CENTER)->LedColor.Green = 160;
 
   HAL_Delay(500);
   gButtonState.value = 0;

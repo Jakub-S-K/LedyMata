@@ -1,6 +1,6 @@
-../Core/Src/Leds.c:27:14:GetLedSection	0	static
-../Core/Src/Leds.c:34:6:InitializeLedConfigs	16	static
-../Core/Src/Leds.c:42:6:InitializeLedSection	40	static
-../Core/Src/Leds.c:53:9:FillBuffer	48	static
-../Core/Src/Leds.c:98:9:InitializeMemoryForDmaTransaction	48	static
-../Core/Src/Leds.c:120:9:HandleDmaCircularMode	24	static
+../Core/Src/Leds.c:24:20:GetLedSection	0	static
+../Core/Src/Leds.c:31:6:InitializeLedConfigs	16	static
+../Core/Src/Leds.c:39:6:InitializeLedSection	40	static
+../Core/Src/Leds.c:50:9:FillBuffer	48	static
+../Core/Src/Leds.c:95:9:InitializeMemoryForDmaTransaction	48	static
+../Core/Src/Leds.c:117:9:HandleDmaCircularMode	24	static

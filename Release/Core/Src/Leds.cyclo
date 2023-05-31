@@ -1,6 +1,6 @@
-Leds.c:27:14:GetLedSection	1
-Leds.c:34:6:InitializeLedConfigs	1
-Leds.c:42:6:InitializeLedSection	1
-Leds.c:53:9:FillBuffer	5
-Leds.c:98:9:InitializeMemoryForDmaTransaction	2
-Leds.c:120:9:HandleDmaCircularMode	1
+Leds.c:24:20:GetLedSection	1
+Leds.c:31:6:InitializeLedConfigs	1
+Leds.c:39:6:InitializeLedSection	1
+Leds.c:50:9:FillBuffer	5
+Leds.c:95:9:InitializeMemoryForDmaTransaction	2
+Leds.c:117:9:HandleDmaCircularMode	1
