@@ -23,7 +23,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "Leds.h"
-#include "TempLeds.h"
 #include <memory.h>
 #include "usbd_customhid.h"
 
@@ -36,18 +35,33 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define SECTION_CHANNEL_UP 1
+#define SECTION_CHANNEL_DOWN 0
+#define SECTION_CHANNEL_LEFT 0
+#define SECTION_CHANNEL_RIGHT 1
+#define SECTION_CHANNEL_CENTER 1
+
+#define SECTION_INDEX_UP 0
+#define SECTION_INDEX_DOWN 1
+#define SECTION_INDEX_LEFT 0
+#define SECTION_INDEX_RIGHT 1
+#define SECTION_INDEX_CENTER 2
+
 #define ADC_CHANNEL_COUNT 4
 #define ADC_DMA_BUFFER_SIZE (ADC_CHANNEL_COUNT)
 #define ADC_INDEX_UP 0
-#define ADC_INDEX_DOWN 1
-#define ADC_INDEX_LEFT 2
-#define ADC_INDEX_RIGHT 3
+#define ADC_INDEX_DOWN 2
+#define ADC_INDEX_LEFT 3
+#define ADC_INDEX_RIGHT 1
 
 #define ADC_HYSTERESIS 20
 #define ADC_MINIMAL_UP 2500
-#define ADC_MINIMAL_DOWN 2500
-#define ADC_MINIMAL_LEFT 2500
-#define ADC_MINIMAL_RIGHT 2500
+#define ADC_MINIMAL_DOWN 2400
+#define ADC_MINIMAL_LEFT 2600
+#define ADC_MINIMAL_RIGHT 2600
+
+#define DMA_BUFFER_SIZE (24 * 8)
 
 static_assert(ADC_INDEX_UP != ADC_INDEX_DOWN);
 static_assert(ADC_INDEX_DOWN != ADC_INDEX_LEFT);
@@ -89,128 +103,132 @@ static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
-
+void HandleDmaCallback(TIM_HandleTypeDef *htim);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-uint16_t gLedCh1Buffer[24 * 8];
+uint16_t gLedCh1Buffer[DMA_BUFFER_SIZE];
 uint8_t gLedCh1BufferIndex;
 uint8_t gLedCh1SectionIndex;
 uint8_t gLedCh1LedIndex;
 
-uint16_t gLedCh2Buffer[24 * 8];
+uint16_t gLedCh2Buffer[DMA_BUFFER_SIZE];
 uint8_t gLedCh2BufferIndex;
 uint8_t gLedCh2SectionIndex;
 uint8_t gLedCh2LedIndex;
 
-uint8_t gInterruptCounter = 0;
-uint8_t gInterruptCounterHalf = 0;
-uint8_t gInterruptCounterFull = 0;
-
-struct {
-	union {
-			uint8_t value;
-		struct {
-			uint8_t first : 1;
-			uint8_t second : 1;
-			uint8_t third : 1;
-			uint8_t fourth : 1;
-		};
-	};
+struct
+{
+  union
+  {
+    uint8_t value;
+    struct
+    {
+      uint8_t first : 1;
+      uint8_t second : 1;
+      uint8_t third : 1;
+      uint8_t fourth : 1;
+    };
+  };
 } gButtonState;
 
 uint8_t StopDmaCh1 = 0;
 uint8_t StopDmaCh2 = 0;
 
-void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
+void HandleDmaCallback(TIM_HandleTypeDef *htim)
 {
-  gInterruptCounter++;
-  gInterruptCounterFull++;
-  if (htim != &htim1) {
+  if (htim != &htim1)
+  {
     return;
   }
 
-  if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
-    if (StopDmaCh1) {
+  if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+  {
+    if (StopDmaCh1)
+    {
       HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_1);
       StopDmaCh1 = 0;
-    } else {
-      StopDmaCh1 = HandleDmaCircularMode(gLedCh1Buffer, 8, 0, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex);
     }
-  } else {
-    if (StopDmaCh2) {
-      HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_2);
-      StopDmaCh2 = 0;
-    } else {
-      StopDmaCh2 = HandleDmaCircularMode(gLedCh2Buffer, 8, 1, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex);
+    else
+    {
+      HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, DMA_BUFFER_SIZE);
+      StopDmaCh1 = HandleDmaCircularMode(
+          0,
+          gLedCh1Buffer,
+          DMA_BUFFER_SIZE / 24,
+          &gLedCh1BufferIndex,
+          &gLedCh1LedIndex,
+          &gLedCh1SectionIndex);
     }
   }
+  else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
+  {
+    if (StopDmaCh2)
+    {
+      HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_2);
+      StopDmaCh2 = 0;
+    }
+    else
+    {
+      HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, DMA_BUFFER_SIZE);
+      StopDmaCh2 = HandleDmaCircularMode(
+          0,
+          gLedCh2Buffer,
+          DMA_BUFFER_SIZE / 24,
+          &gLedCh2BufferIndex,
+          &gLedCh2LedIndex,
+          &gLedCh2SectionIndex);
+    }
+  }
+}
+
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
+{
+  HandleDmaCallback(htim);
 }
 
 void HAL_TIM_PWM_PulseFinishedHalfCpltCallback(TIM_HandleTypeDef *htim)
 {
-  gInterruptCounter++;
-  gInterruptCounterHalf++;
-  if (htim != &htim1) {
-    return;
-  }
-
-  if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
-    if (StopDmaCh1) {
-      HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_1);
-      StopDmaCh1 = 0;
-    } else {
-      StopDmaCh1 = HandleDmaCircularMode(gLedCh1Buffer, 8, 0, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex);
-    }
-  } else {
-    if (StopDmaCh2) {
-      HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_2);
-      StopDmaCh2 = 0;
-    } else {
-      StopDmaCh2 = HandleDmaCircularMode(gLedCh2Buffer, 8, 1, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex);
-    }
-  }
+  HandleDmaCallback(htim);
 }
-
-#define ADC_MINIMUM_VALUE 800
 
 uint32_t gAdcLastClick[ADC_CHANNEL_COUNT];
 #define DEBOUNCE_TIME 40
 
-void AdcInitializeData(void) {
-  memset (&gAdcBuffer, 0, sizeof (gAdcBuffer));
-  memset (&gAdcLastClick, 0, sizeof (gAdcLastClick));
- gAdcMinimalValues[ADC_INDEX_UP] = ADC_MINIMAL_UP;
- gAdcMinimalValues[ADC_INDEX_DOWN] = ADC_MINIMAL_DOWN;
- gAdcMinimalValues[ADC_INDEX_LEFT] = ADC_MINIMAL_LEFT;
- gAdcMinimalValues[ADC_INDEX_RIGHT] = ADC_MINIMAL_RIGHT;
- gAdcToSectionMapping[ADC_INDEX_UP] = SECTION_INDEX_UP;
- gAdcToSectionMapping[ADC_INDEX_DOWN] = SECTION_INDEX_DOWN;
- gAdcToSectionMapping[ADC_INDEX_LEFT] = SECTION_INDEX_LEFT;
- gAdcToSectionMapping[ADC_INDEX_RIGHT] = SECTION_INDEX_RIGHT;
- gAdcToChannelMapping[ADC_INDEX_UP] = 0;
- gAdcToChannelMapping[ADC_INDEX_DOWN] = 1;
- gAdcToChannelMapping[ADC_INDEX_LEFT] = 1;
- gAdcToChannelMapping[ADC_INDEX_RIGHT] = 0;
+void AdcInitializeData(void)
+{
+  memset(&gAdcBuffer, 0, sizeof(gAdcBuffer));
+  memset(&gAdcLastClick, 0, sizeof(gAdcLastClick));
+  gAdcMinimalValues[ADC_INDEX_UP] = ADC_MINIMAL_UP;
+  gAdcMinimalValues[ADC_INDEX_DOWN] = ADC_MINIMAL_DOWN;
+  gAdcMinimalValues[ADC_INDEX_LEFT] = ADC_MINIMAL_LEFT;
+  gAdcMinimalValues[ADC_INDEX_RIGHT] = ADC_MINIMAL_RIGHT;
+  gAdcToSectionMapping[ADC_INDEX_UP] = SECTION_INDEX_UP;
+  gAdcToSectionMapping[ADC_INDEX_DOWN] = SECTION_INDEX_DOWN;
+  gAdcToSectionMapping[ADC_INDEX_LEFT] = SECTION_INDEX_LEFT;
+  gAdcToSectionMapping[ADC_INDEX_RIGHT] = SECTION_INDEX_RIGHT;
+  gAdcToChannelMapping[ADC_INDEX_UP] = SECTION_CHANNEL_UP;
+  gAdcToChannelMapping[ADC_INDEX_DOWN] = SECTION_CHANNEL_DOWN;
+  gAdcToChannelMapping[ADC_INDEX_LEFT] = SECTION_CHANNEL_LEFT;
+  gAdcToChannelMapping[ADC_INDEX_RIGHT] = SECTION_CHANNEL_RIGHT;
 }
 
-
-uint8_t GetButtonState(uint8_t Channel) {
-  if (gButtonState.value & (1 << Channel)) {
-    if (HAL_GetTick() - gAdcLastClick[Channel] > DEBOUNCE_TIME) {
-      if (gAdcBuffer[Channel] <= (gAdcMinimalValues[Channel] - ADC_HYSTERESIS)) {
-        gButtonState.value = gButtonState.value ^ (1 << Channel);
-        return 0;
-      }
-    }
-  } else {
-    if (gAdcBuffer[Channel] >= gAdcMinimalValues[Channel]) {
-      gAdcLastClick[Channel] = HAL_GetTick();
-      gButtonState.value = gButtonState.value | (1 << Channel);
-      return 1;
-    }
+uint8_t GetButtonState(uint8_t Channel)
+{
+  if ((gButtonState.value & (1 << Channel)) &&
+      (HAL_GetTick() - gAdcLastClick[Channel] > DEBOUNCE_TIME) &&
+      (gAdcBuffer[Channel] <= (gAdcMinimalValues[Channel] - ADC_HYSTERESIS)))
+  {
+    gButtonState.value = gButtonState.value ^ (1 << Channel);
+    return 0;
+  }
+  else if (gAdcBuffer[Channel] >= gAdcMinimalValues[Channel])
+  {
+    gAdcLastClick[Channel] = HAL_GetTick();
+    gButtonState.value = gButtonState.value | (1 << Channel);
+    return 1;
   }
   return 0xFF;
 }
@@ -223,36 +241,45 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
   uint8_t ButtonState;
   uint8_t UpdateUsb;
 
-  if (hadc != &hadc1) {
+  if (hadc != &hadc1)
+  {
     return;
   }
 
   UpdateUsb = 0;
-  for (AdcChannel = 0; AdcChannel < ADC_CHANNEL_COUNT; AdcChannel++) {
+  for (AdcChannel = 0; AdcChannel < ADC_CHANNEL_COUNT; AdcChannel++)
+  {
     Section = gAdcToSectionMapping[AdcChannel];
     DmaChannel = gAdcToChannelMapping[AdcChannel];
-    ButtonState = GetButtonState (AdcChannel);
-    if (ButtonState == 1) {
+    ButtonState = GetButtonState(AdcChannel);
+    if (ButtonState == 1)
+    {
       GetLedSection(DmaChannel, Section)->LedColorIndex = 1;
       UpdateUsb = 1;
-    } else if (ButtonState == 0) {
+    }
+    else if (ButtonState == 0)
+    {
       GetLedSection(DmaChannel, Section)->LedColorIndex = 0;
       UpdateUsb = 1;
     }
   }
-  
-  if (UpdateUsb) {
-    USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t*)&gButtonState, sizeof(gButtonState));
-  }
 
-  if (hdma_tim1_ch1.State == HAL_DMA_STATE_READY) {
-    if (InitializeMemoryForDmaTransaction(gLedCh1Buffer, 8, 0, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex) != 0) {
-      HAL_TIM_PWM_Start_DMA (&htim1, TIM_CHANNEL_1, (uint32_t*)gLedCh1Buffer, 24 * 8);
+  if (UpdateUsb)
+  {
+    USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t *)&gButtonState, sizeof(gButtonState));
+    if (hdma_tim1_ch1.State == HAL_DMA_STATE_READY)
+    {
+      if (InitializeMemoryForDmaTransaction(0, gLedCh1Buffer, DMA_BUFFER_SIZE / 24, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex) != 0)
+      {
+        HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, 24 * 8);
+      }
     }
-  }
-  if (hdma_tim1_ch2.State == HAL_DMA_STATE_READY) {
-    if (InitializeMemoryForDmaTransaction(gLedCh2Buffer, 8, 1, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex) != 0) {
-      HAL_TIM_PWM_Start_DMA (&htim1, TIM_CHANNEL_2, (uint32_t*)gLedCh2Buffer, 24 * 8);
+    if (hdma_tim1_ch2.State == HAL_DMA_STATE_READY)
+    {
+      if (InitializeMemoryForDmaTransaction(1, gLedCh2Buffer, DMA_BUFFER_SIZE / 24, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex) != 0)
+      {
+        HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, 24 * 8);
+      }
     }
   }
 }
@@ -292,37 +319,41 @@ int main(void)
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   AdcInitializeData();
-  Initialize(2); // 2 DMA channels
-  InitializeChannel(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_1), 3); // 3 sections
-  InitializeChannel(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_2), 2); // 2 sections
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_1), 0)->LedAmount = 18;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_1), 1)->LedAmount = 18;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_1), 2)->LedAmount = 24;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_1), 0)->LedColorIndex = 0;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_1), 1)->LedColorIndex = 0;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_1), 2)->LedColorIndex = 0;
+  InitializeLedConfigs(2); // 2 DMA channels
+  InitializeLedSection(SECTION_CHANNEL_LEFT, 2);
+  InitializeLedSection(SECTION_CHANNEL_UP, 3);
 
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_2), 0)->LedAmount = 18;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_2), 1)->LedAmount = 18;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_2), 0)->LedColorIndex = 0;
-  GetLedSection(GET_INDEX_FROM_CHANNEL(TIM_CHANNEL_2), 1)->LedColorIndex = 0;
+  GetLedSection(SECTION_CHANNEL_LEFT, SECTION_INDEX_LEFT)->LedAmount = 18;
+  GetLedSection(SECTION_CHANNEL_LEFT, SECTION_INDEX_LEFT)->LedColorIndex = 0;
 
-  HAL_Delay(2000);
+  GetLedSection(SECTION_CHANNEL_DOWN, SECTION_INDEX_DOWN)->LedAmount = 18;
+  GetLedSection(SECTION_CHANNEL_DOWN, SECTION_INDEX_DOWN)->LedColorIndex = 0;
+
+  GetLedSection(SECTION_CHANNEL_UP, SECTION_INDEX_UP)->LedAmount = 18;
+  GetLedSection(SECTION_CHANNEL_UP, SECTION_INDEX_UP)->LedColorIndex = 0;
+
+  GetLedSection(SECTION_CHANNEL_RIGHT, SECTION_INDEX_RIGHT)->LedAmount = 18;
+  GetLedSection(SECTION_CHANNEL_RIGHT, SECTION_INDEX_RIGHT)->LedColorIndex = 0;
+
+  GetLedSection(SECTION_CHANNEL_CENTER, SECTION_INDEX_CENTER)->LedAmount = 24;
+  GetLedSection(SECTION_CHANNEL_CENTER, SECTION_INDEX_CENTER)->LedColorIndex = 2;
+
+  HAL_Delay(500);
   gButtonState.value = 0;
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)gAdcBuffer, ADC_DMA_BUFFER_SIZE); // start adc in DMA mode
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)gAdcBuffer, ADC_DMA_BUFFER_SIZE); // start adc in DMA mode
+  InitializeMemoryForDmaTransaction(0, gLedCh1Buffer, DMA_BUFFER_SIZE / 24, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex);
+  HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, DMA_BUFFER_SIZE);
+  InitializeMemoryForDmaTransaction(1, gLedCh2Buffer, DMA_BUFFER_SIZE / 24, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex);
+  HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, DMA_BUFFER_SIZE);
 
-//  USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t*)&gButtonState, sizeof(gButtonState));
-
-//  HAL_PWR_EnableSleepOnExit();
-//  HAL_PWR_EnterSLEEPMode(0, PWR_SLEEPENTRY_WFI);
+  //  HAL_PWR_EnableSleepOnExit();
+  //  HAL_PWR_EnterSLEEPMode(0, PWR_SLEEPENTRY_WFI);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  // HAL_Delay(500);
-	  //   gButtonState.value = 0b0101;
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

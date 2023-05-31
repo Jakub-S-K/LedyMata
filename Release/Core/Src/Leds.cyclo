@@ -1,7 +1,6 @@
-Leds.c:41:10:GetCurrentSectionIndex	6
-Leds.c:77:19:PrepareBufferForSingleLed	3
-Leds.c:101:19:LedTransferColorsBySectionsCh1	5
-Leds.c:134:19:LedTransferColorsBySectionsCh2	5
-Leds.c:167:6:LedInitializeDataForDma	1
-Leds.c:184:6:LedHandleDmaCh1Callback	4
-Leds.c:207:6:LedHandleDmaCh2Callback	4
+Leds.c:27:14:GetLedSection	1
+Leds.c:34:6:InitializeLedConfigs	1
+Leds.c:42:6:InitializeLedSection	1
+Leds.c:53:9:FillBuffer	5
+Leds.c:98:9:InitializeMemoryForDmaTransaction	2
+Leds.c:120:9:HandleDmaCircularMode	1
