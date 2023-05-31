@@ -166,7 +166,7 @@ void HandleDmaCallback(TIM_HandleTypeDef *htim)
           &gLedCh1SectionIndex);
     }
   }
-  else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
+  else
   {
     if (StopDmaCh2)
     {
@@ -220,18 +220,25 @@ void AdcInitializeData(void)
 
 uint8_t GetButtonState(uint8_t Channel)
 {
-  if ((gButtonState.value & (1 << Channel)) &&
-      (HAL_GetTick() - gAdcLastClick[Channel] > DEBOUNCE_TIME) &&
-      (gAdcBuffer[Channel] <= (gAdcMinimalValues[Channel] - ADC_HYSTERESIS)))
+  if (gButtonState.value & (1 << Channel))
   {
-    gButtonState.value = gButtonState.value ^ (1 << Channel);
-    return 0;
+    if ((HAL_GetTick() - gAdcLastClick[Channel] > DEBOUNCE_TIME))
+    {
+      if ((gAdcBuffer[Channel] <= (gAdcMinimalValues[Channel] - ADC_HYSTERESIS)))
+      {
+        gButtonState.value = gButtonState.value ^ (1 << Channel);
+        return 0;
+      }
+    }
   }
-  else if (gAdcBuffer[Channel] >= gAdcMinimalValues[Channel])
+  else
   {
-    gAdcLastClick[Channel] = HAL_GetTick();
-    gButtonState.value = gButtonState.value | (1 << Channel);
-    return 1;
+    if (gAdcBuffer[Channel] >= gAdcMinimalValues[Channel])
+    {
+      gAdcLastClick[Channel] = HAL_GetTick();
+      gButtonState.value = gButtonState.value | (1 << Channel);
+      return 1;
+    }
   }
   return 0xFF;
 }
@@ -274,19 +281,20 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
   if (UpdateUsb)
   {
     USBD_CUSTOM_HID_SendReport(&hUsbDeviceFS, (uint8_t *)&gButtonState, sizeof(gButtonState));
-    if (hdma_tim1_ch1.State == HAL_DMA_STATE_READY)
+  }
+
+  if (hdma_tim1_ch1.State == HAL_DMA_STATE_READY)
+  {
+    if (InitializeMemoryForDmaTransaction(0, gLedCh1Buffer, DMA_BUFFER_SIZE / 24, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex) != 0)
     {
-      if (InitializeMemoryForDmaTransaction(0, gLedCh1Buffer, DMA_BUFFER_SIZE / 24, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex) != 0)
-      {
-        HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, 24 * 8);
-      }
+      HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, DMA_BUFFER_SIZE);
     }
-    if (hdma_tim1_ch2.State == HAL_DMA_STATE_READY)
+  }
+  if (hdma_tim1_ch2.State == HAL_DMA_STATE_READY)
+  {
+    if (InitializeMemoryForDmaTransaction(1, gLedCh2Buffer, DMA_BUFFER_SIZE / 24, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex) != 0)
     {
-      if (InitializeMemoryForDmaTransaction(1, gLedCh2Buffer, DMA_BUFFER_SIZE / 24, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex) != 0)
-      {
-        HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, 24 * 8);
-      }
+      HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, DMA_BUFFER_SIZE);
     }
   }
 }
@@ -294,9 +302,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -358,9 +366,9 @@ int main(void)
   HAL_Delay(500);
   gButtonState.value = 0;
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)gAdcBuffer, ADC_DMA_BUFFER_SIZE); // start adc in DMA mode
-  InitializeMemoryForDmaTransaction(0, gLedCh1Buffer, DMA_BUFFER_SIZE / 24, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex);
+  InitializeMemoryForDmaTransaction(SECTION_CHANNEL_LEFT, gLedCh1Buffer, DMA_BUFFER_SIZE / 24, &gLedCh1BufferIndex, &gLedCh1LedIndex, &gLedCh1SectionIndex);
   HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)gLedCh1Buffer, DMA_BUFFER_SIZE);
-  InitializeMemoryForDmaTransaction(1, gLedCh2Buffer, DMA_BUFFER_SIZE / 24, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex);
+  InitializeMemoryForDmaTransaction(SECTION_CHANNEL_UP, gLedCh2Buffer, DMA_BUFFER_SIZE / 24, &gLedCh2BufferIndex, &gLedCh2LedIndex, &gLedCh2SectionIndex);
   HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_2, (uint32_t *)gLedCh2Buffer, DMA_BUFFER_SIZE);
 
   //  HAL_PWR_EnableSleepOnExit();
@@ -379,9 +387,9 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -389,8 +397,8 @@ void SystemClock_Config(void)
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
@@ -404,9 +412,8 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
@@ -416,7 +423,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC|RCC_PERIPHCLK_USB;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC | RCC_PERIPHCLK_USB;
   PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
   PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -426,10 +433,10 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief ADC1 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_ADC1_Init(void)
 {
 
@@ -444,7 +451,7 @@ static void MX_ADC1_Init(void)
   /* USER CODE END ADC1_Init 1 */
 
   /** Common config
-  */
+   */
   hadc1.Instance = ADC1;
   hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
@@ -458,7 +465,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure Regular Channel
-  */
+   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
@@ -468,7 +475,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure Regular Channel
-  */
+   */
   sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -477,7 +484,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure Regular Channel
-  */
+   */
   sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = ADC_REGULAR_RANK_3;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -486,7 +493,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure Regular Channel
-  */
+   */
   sConfig.Channel = ADC_CHANNEL_4;
   sConfig.Rank = ADC_REGULAR_RANK_4;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -496,14 +503,13 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
-
 }
 
 /**
-  * @brief TIM1 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief TIM1 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_TIM1_Init(void)
 {
 
@@ -575,12 +581,11 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 2 */
   HAL_TIM_MspPostInit(&htim1);
-
 }
 
 /**
-  * Enable DMA controller clock
-  */
+ * Enable DMA controller clock
+ */
 static void MX_DMA_Init(void)
 {
 
@@ -597,25 +602,24 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel3_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
-
 }
 
 /**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_GPIO_Init(void)
 {
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+  /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
@@ -623,9 +627,9 @@ static void MX_GPIO_Init(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -637,14 +641,14 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */

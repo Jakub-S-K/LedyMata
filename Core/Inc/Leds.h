@@ -20,22 +20,22 @@ typedef struct
 
 LED_SECTION_COLOR *GetLedSection(uint8_t ChannelIndex, uint8_t SectionIndex);
 void InitializeLedConfigs(
-    const uint8_t NumberOfLedConfigurations);
-void InitializeLedSection(const uint8_t LedConfigIndex,
-                          const uint8_t NumberOfSections);
+    uint8_t NumberOfLedConfigurations);
+void InitializeLedSection(uint8_t LedConfigIndex,
+                          uint8_t NumberOfSections);
 uint8_t InitializeMemoryForDmaTransaction(
-    const uint8_t LedConfigIndex,
-    uint16_t *const Buffer,
-    const uint8_t AmountOfLedsInBuffer,
-    uint8_t *const BufferIndex,
-    uint8_t *const LedIndex,
-    uint8_t *const SectionIndex);
+    uint8_t LedConfigIndex,
+    uint16_t *Buffer,
+    uint8_t AmountOfLedsInBuffer,
+    uint8_t *BufferIndex,
+    uint8_t *LedIndex,
+    uint8_t *SectionIndex);
 uint8_t HandleDmaCircularMode(
-    const uint8_t LedConfigIndex,
-    uint16_t *const Buffer,
-    const uint8_t AmountOfLedsInBuffer,
-    uint8_t *const BufferIndex,
-    uint8_t *const LedIndex,
-    uint8_t *const SectionIndex);
+    uint8_t LedConfigIndex,
+    uint16_t *Buffer,
+    uint8_t AmountOfLedsInBuffer,
+    uint8_t *BufferIndex,
+    uint8_t *LedIndex,
+    uint8_t *SectionIndex);
 
 #endif // _LEDS_H_
