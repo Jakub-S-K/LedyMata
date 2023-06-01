@@ -1,4 +1,3 @@
-
 #include <memory.h>
 #include <malloc.h>
 #include <stdint.h>
@@ -9,87 +8,161 @@ const uint8_t ZeroOneMapping[] = {30, 60};
 
 #define BITS_PER_BYTE 8
 #define LED_TRANSFER_SIZE (BITS_PER_BYTE * 3)
+#define BRIGTHNESS 31
 
-const COLOR gColor[] = {{0xFF, 0xFF, 0xFF}, {0, 0, 0xFF}, {0, 0xFF, 0}, {0xFF, 0, 0}};
-
-typedef struct {
-  LED_SECTION *LedSections;
+typedef struct
+{
+  LED_SECTION_COLOR *LedSections;
   uint8_t LedSectionsSize;
-} smth;
+} LED_CONFIG;
 
-smth *Channels;
-smth *ChannelsShadow;
-uint8_t ChannelsSize;
+LED_CONFIG *LedConfigs;
+LED_CONFIG *LedConfigsShadow;
+uint8_t NumberOfLedConfigs;
 
-LED_SECTION *GetLedSection(uint8_t ChannelIndex, uint8_t SectionIndex) {
-  return &Channels[ChannelIndex].LedSections[SectionIndex];
+LED_SECTION_COLOR *GetLedSection(
+    uint8_t LedConfigIndex,
+    uint8_t SectionIndex)
+{
+  return &LedConfigs[LedConfigIndex].LedSections[SectionIndex];
 }
 
-void Initialize(uint8_t NumberOfChannels) {
-  Channels = malloc(sizeof(smth) * NumberOfChannels);
-  ChannelsShadow = malloc(sizeof(smth) * NumberOfChannels);
-  ChannelsSize = NumberOfChannels;
+void InitializeLedConfigs(
+    uint8_t NumberOfLedConfigurations)
+{
+  LedConfigs = malloc(sizeof(LED_CONFIG) * NumberOfLedConfigurations);
+  LedConfigsShadow = malloc(sizeof(LED_CONFIG) * NumberOfLedConfigurations);
+  NumberOfLedConfigs = NumberOfLedConfigurations;
 }
 
-void InitializeChannel(uint8_t ChannelIndex, uint8_t NumberOfSections) {
-  Channels[ChannelIndex].LedSections = malloc(sizeof(LED_SECTION) * NumberOfSections);
-  ChannelsShadow[ChannelIndex].LedSections = malloc(sizeof(LED_SECTION) * NumberOfSections);
-  memset(Channels[ChannelIndex].LedSections, 0, sizeof(LED_SECTION) * NumberOfSections);
-  Channels[ChannelIndex].LedSectionsSize = NumberOfSections;
-  ChannelsShadow[ChannelIndex].LedSectionsSize = NumberOfSections;
+void InitializeLedSection(
+    uint8_t LedConfigIndex,
+    uint8_t NumberOfSections)
+{
+  LedConfigs[LedConfigIndex].LedSections = malloc(sizeof(LED_SECTION_COLOR) * NumberOfSections);
+  LedConfigsShadow[LedConfigIndex].LedSections = malloc(sizeof(LED_SECTION_COLOR) * NumberOfSections);
+  memset(LedConfigs[LedConfigIndex].LedSections, 0, sizeof(LED_SECTION_COLOR) * NumberOfSections);
+  LedConfigs[LedConfigIndex].LedSectionsSize = NumberOfSections;
+  LedConfigsShadow[LedConfigIndex].LedSectionsSize = NumberOfSections;
 }
 
-uint8_t FillBuffer(uint16_t *Buffer, uint8_t BufferStartIndex, uint8_t ChannelIndex, uint8_t *SectionStartIndex, uint8_t *LedStartIndex, uint8_t TransferSizeInLeds) {
+uint8_t FillBuffer(
+    uint8_t LedConfigIndex,
+    uint16_t *Buffer,
+    uint8_t *BufferStartIndex,
+    uint8_t *SectionStartIndex,
+    uint8_t *LedStartIndex,
+    uint8_t BufferSize)
+{
   uint8_t *Index;
   uint8_t *LedIndex;
   uint8_t BufferIndex;
+  uint8_t BufferStartTempIndex = *BufferStartIndex;
   uint8_t *ColorAddr;
   uint8_t BitInTransferIndex;
-  uint8_t TransactionCounter;
-  uint8_t LedTransactionCounter = 0;
+  uint8_t LedColorCounter;
+  uint8_t LoopSize;
+  uint8_t BufferTransactionCounter = 0;
 
   LedIndex = LedStartIndex;
-  for (Index = SectionStartIndex; *Index < Channels[ChannelIndex].LedSectionsSize; *Index = *Index + 1) {
-    for (; *LedIndex < Channels[ChannelIndex].LedSections[*Index].LedAmount; *LedIndex = *LedIndex + 1) {
-      TransactionCounter = 0;
-      for (BufferIndex = BufferStartIndex; BufferIndex < BufferStartIndex + LED_TRANSFER_SIZE; BufferIndex++) {
-        ColorAddr = (uint8_t*)&gColor[Channels[ChannelIndex].LedSections[*Index].LedColorIndex];
+  for (Index = SectionStartIndex; *Index < LedConfigs[LedConfigIndex].LedSectionsSize; *Index = *Index + 1)
+  {
+    for (; *LedIndex < LedConfigs[LedConfigIndex].LedSections[*Index].LedAmount; *LedIndex = *LedIndex + 1)
+    {
+      LedColorCounter = BufferStartTempIndex % LED_TRANSFER_SIZE;
+      LoopSize = LedColorCounter;
+      for (BufferIndex = *BufferStartIndex; BufferIndex < *BufferStartIndex + (LED_TRANSFER_SIZE - LoopSize); BufferIndex++)
+      {
+        ColorAddr = (uint8_t *)&(LedConfigs[LedConfigIndex].LedSections[*Index].LedColor);
         BitInTransferIndex = BufferIndex % BITS_PER_BYTE;
-        ColorAddr = ColorAddr + TransactionCounter / BITS_PER_BYTE;
-        Buffer[BufferIndex] = ZeroOneMapping[(((*(ColorAddr)) * 20) / 100) >> (7 - (BitInTransferIndex)) & 0x1];
-        TransactionCounter++;
-        TransactionCounter = TransactionCounter % LED_TRANSFER_SIZE;
+        ColorAddr = ColorAddr + LedColorCounter / BITS_PER_BYTE;
+        Buffer[BufferIndex] = ZeroOneMapping[(((*(ColorAddr)) * BRIGTHNESS) / 100) >> (7 - (BitInTransferIndex)) & 0x1];
+        LedColorCounter++;
+        LedColorCounter = LedColorCounter % LED_TRANSFER_SIZE;
+        BufferTransactionCounter++;
       }
-      BufferStartIndex += LED_TRANSFER_SIZE;
-      LedTransactionCounter++;
-      if (LedTransactionCounter == TransferSizeInLeds) {
-        *LedIndex = *LedIndex + 1;
+      BufferStartTempIndex += LED_TRANSFER_SIZE - (BufferIndex % LED_TRANSFER_SIZE);
+
+      if (BufferTransactionCounter == BufferSize)
+      {
+        if (BufferTransactionCounter % LED_TRANSFER_SIZE == 0)
+        {
+          *LedIndex = *LedIndex + 1;
+        }
+        *BufferStartIndex += BufferTransactionCounter % LED_TRANSFER_SIZE;
         return 0;
       }
     }
     *LedIndex = 0;
   }
-  return *Index >= Channels[ChannelIndex].LedSectionsSize;
+  *BufferStartIndex = BufferIndex;
+  return *Index >= LedConfigs[LedConfigIndex].LedSectionsSize;
 }
 
-uint8_t InitializeMemoryForDmaTransaction(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_t ChannelIndex, uint8_t *BufferIndex, uint8_t *LedIndex, uint8_t *SectionIndex) {
+uint8_t InitializeMemoryForDmaTransaction(
+    uint8_t LedConfigIndex,
+    uint16_t *Buffer,
+    uint8_t AmountOfLedsInBuffer,
+    uint8_t *BufferIndex,
+    uint8_t *LedIndex,
+    uint8_t *SectionIndex)
+{
   *BufferIndex = 0;
   *SectionIndex = 0;
   *LedIndex = 0;
 
-  if (memcmp(Channels[ChannelIndex].LedSections, ChannelsShadow[ChannelIndex].LedSections, sizeof(LED_SECTION) * Channels[ChannelIndex].LedSectionsSize) == 0) {
+  if (memcmp(LedConfigs[LedConfigIndex].LedSections, LedConfigsShadow[LedConfigIndex].LedSections, sizeof(LED_SECTION_COLOR) * LedConfigs[LedConfigIndex].LedSectionsSize) == 0)
+  {
     return 0;
   }
 
-  memcpy(ChannelsShadow[ChannelIndex].LedSections, Channels[ChannelIndex].LedSections, sizeof(LED_SECTION) * Channels[ChannelIndex].LedSectionsSize);
-  FillBuffer(Buffer, *BufferIndex, ChannelIndex, SectionIndex, LedIndex, BufferSizeInLeds);
+  memcpy(LedConfigsShadow[LedConfigIndex].LedSections, LedConfigs[LedConfigIndex].LedSections, sizeof(LED_SECTION_COLOR) * LedConfigs[LedConfigIndex].LedSectionsSize);
+  FillBuffer(LedConfigIndex, Buffer, BufferIndex, SectionIndex, LedIndex, AmountOfLedsInBuffer);
   return 1;
 }
 
-uint8_t HandleDmaCircularMode(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_t ChannelIndex, uint8_t *BufferIndex, uint8_t *LedIndex, uint8_t *SectionIndex) {
-  uint8_t HalfOfBufferSize = BufferSizeInLeds / 2;
-  uint8_t ReturnValue;
-  ReturnValue = FillBuffer(Buffer, *BufferIndex, ChannelIndex, SectionIndex, LedIndex, HalfOfBufferSize);
-  *BufferIndex = (*BufferIndex + (HalfOfBufferSize * LED_TRANSFER_SIZE)) % (BufferSizeInLeds * LED_TRANSFER_SIZE);
+uint8_t HandleDmaCircularMode(
+    uint8_t LedConfigIndex,
+    uint16_t *Buffer,
+    uint8_t AmountOfLedsInBuffer,
+    uint8_t *BufferIndex,
+    uint8_t *LedIndex,
+    uint8_t *SectionIndex)
+{
+  uint8_t HalfOfBufferSize = AmountOfLedsInBuffer / 2;
+  uint8_t ReturnValue = FillBuffer(LedConfigIndex, Buffer, BufferIndex, SectionIndex, LedIndex, HalfOfBufferSize);
   return ReturnValue;
+}
+
+void InitializeForFillingWithZeroes(
+    uint8_t *ZeroLedIndex)
+{
+  *ZeroLedIndex = 0;
+}
+
+uint8_t HandleDmaCircularModeFillWithZeroes(
+    uint8_t LedConfigIndex,
+    uint16_t *Buffer,
+    uint8_t AmountOfLedsInBuffer,
+    uint8_t *BufferIndex,
+    uint8_t *ZeroLedIndex)
+{
+  uint8_t HalfOfBufferSize;
+  uint8_t Index;
+
+  if (*ZeroLedIndex >= AmountOfLedsInBuffer)
+  {
+    return 1;
+  }
+
+  HalfOfBufferSize = AmountOfLedsInBuffer / 2;
+
+  for (Index = *BufferIndex; Index < *BufferIndex + (LED_TRANSFER_SIZE * HalfOfBufferSize); Index++)
+  {
+    Buffer[Index] = 0;
+  }
+
+  *ZeroLedIndex += HalfOfBufferSize;
+
+  return 0;
 }
