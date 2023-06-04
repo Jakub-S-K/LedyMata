@@ -73,6 +73,7 @@ uint8_t FillBuffer(uint16_t *Buffer, uint8_t BufferStartIndex, uint8_t ChannelIn
 }
 
 uint8_t InitializeMemoryForDmaTransaction(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_t ChannelIndex, uint8_t *BufferIndex, uint8_t *LedIndex, uint8_t *SectionIndex) {
+  // *BufferIndex = *BufferIndex % (BufferSizeInLeds * LED_TRANSFER_SIZE);
   *BufferIndex = 0;
   *SectionIndex = 0;
   *LedIndex = 0;
@@ -82,6 +83,7 @@ uint8_t InitializeMemoryForDmaTransaction(uint16_t *Buffer, uint8_t BufferSizeIn
   }
 
   memcpy(ChannelsShadow[ChannelIndex].LedSections, Channels[ChannelIndex].LedSections, sizeof(LED_SECTION) * Channels[ChannelIndex].LedSectionsSize);
+  memset(Buffer, 0, BufferSizeInLeds * LED_TRANSFER_SIZE);
   FillBuffer(Buffer, *BufferIndex, ChannelIndex, SectionIndex, LedIndex, BufferSizeInLeds);
   return 1;
 }
@@ -93,3 +95,56 @@ uint8_t HandleDmaCircularMode(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_
   *BufferIndex = (*BufferIndex + (HalfOfBufferSize * LED_TRANSFER_SIZE)) % (BufferSizeInLeds * LED_TRANSFER_SIZE);
   return ReturnValue;
 }
+
+uint8_t HandleDmaCircularModeZero(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_t ChannelIndex, uint8_t *BufferIndex, uint8_t *ZeroIndex) {
+  uint8_t HalfOfBufferSize;
+  uint8_t Index;
+
+  if (*ZeroIndex >= 10)
+  {
+    return 1;
+  }
+
+  HalfOfBufferSize = BufferSizeInLeds / 2;
+
+  for (Index = *BufferIndex; Index < *BufferIndex + (LED_TRANSFER_SIZE * HalfOfBufferSize); Index++)
+  {
+    Buffer[Index] = 0;
+  }
+
+  *ZeroIndex += HalfOfBufferSize;
+  *BufferIndex = Index % (LED_TRANSFER_SIZE * BufferSizeInLeds);
+
+  return 0;
+}
+
+// int main () {
+//     uint16_t Buffer[24 * 6];
+//   uint8_t BufferIndex;
+//   uint8_t SectionIndex;
+//   uint8_t LedIndex;
+//   uint8_t ZeroIndex;
+
+//   Initialize(1);
+//   InitializeChannel(0, 10);
+//   GetLedSection(0, 0)->LedAmount = 18;
+//   GetLedSection(0, 1)->LedAmount = 18;
+//   GetLedSection(0, 2)->LedAmount = 18;
+//   GetLedSection(0, 3)->LedAmount = 2;
+//   GetLedSection(0, 4)->LedAmount = 2;
+//   GetLedSection(0, 5)->LedAmount = 7;
+//   GetLedSection(0, 6)->LedAmount = 2;
+//   GetLedSection(0, 7)->LedAmount = 9;
+//   GetLedSection(0, 8)->LedAmount = 2;
+//   GetLedSection(0, 9)->LedAmount = 11;
+
+//   InitializeMemoryForDmaTransaction(Buffer, 6, 0, &BufferIndex, &LedIndex, &SectionIndex);
+//   HandleDmaCircularMode(Buffer, 6, 0, &BufferIndex, &LedIndex, &SectionIndex);
+//   HandleDmaCircularMode(Buffer, 6, 0, &BufferIndex, &LedIndex, &SectionIndex);
+//   HandleDmaCircularMode(Buffer, 6, 0, &BufferIndex, &LedIndex, &SectionIndex);
+//   HandleDmaCircularModeZero(Buffer, 6, 0, &BufferIndex, &ZeroIndex);
+//   HandleDmaCircularModeZero(Buffer, 6, 0, &BufferIndex, &ZeroIndex);
+//   HandleDmaCircularModeZero(Buffer, 6, 0, &BufferIndex, &ZeroIndex);
+//   HandleDmaCircularModeZero(Buffer, 6, 0, &BufferIndex, &ZeroIndex);
+//   HandleDmaCircularModeZero(Buffer, 6, 0, &BufferIndex, &ZeroIndex);
+// }

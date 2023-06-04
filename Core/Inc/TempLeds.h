@@ -28,5 +28,6 @@ void Initialize(uint8_t NumberOfChannels);
 void InitializeChannel(uint8_t ChannelIndex, uint8_t NumberOfSections);
 uint8_t InitializeMemoryForDmaTransaction(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_t ChannelIndex, uint8_t *BufferIndex, uint8_t *LedIndex, uint8_t *SectionIndex);
 uint8_t HandleDmaCircularMode(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_t ChannelIndex, uint8_t *BufferIndex, uint8_t *LedIndex, uint8_t *SectionIndex);
+uint8_t HandleDmaCircularModeZero(uint16_t *Buffer, uint8_t BufferSizeInLeds, uint8_t ChannelIndex, uint8_t *BufferIndex, uint8_t *ZeroIndex);
 
 #endif // DUPA
