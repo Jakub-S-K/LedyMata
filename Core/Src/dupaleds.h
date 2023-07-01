@@ -16,10 +16,10 @@ typedef struct
 } LED_SECTION;
 
 void InitializeConfigs(uint8_t AmountOfConfigs);
-uint8_t InitializeConfig(uint8_t ConfigIndex, uint8_t AmountOfSections, uint8_t *LedCounts, uint8_t BufferSize);
+uint8_t InitializeConfig(uint8_t ConfigIndex, uint8_t AmountOfSections, uint8_t *LedCounts, uint16_t *Buffer, uint8_t BufferSize);
 LED_SECTION *GetLedSection(uint8_t ConfigIndex, uint8_t SectionIndex);
-uint8_t FillHalfBuffer(uint8_t ConfigIndex, uint16_t *Buffer);
-uint8_t FillHalfBufferWithZeros(uint8_t ConfigIndex, uint16_t *Buffer);
-uint8_t PrepareBufferForTransaction(uint8_t ConfigIndex, uint8_t *Buffer);
+uint8_t FillHalfBuffer(uint8_t ConfigIndex);
+uint8_t FillHalfBufferWithZeros(uint8_t ConfigIndex);
+uint8_t PrepareBufferForTransaction(uint8_t ConfigIndex);
 
 #endif
