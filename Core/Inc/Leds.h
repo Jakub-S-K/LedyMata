@@ -1,45 +1,41 @@
-#ifndef __LEDS_H__
-#define __LEDS_H__
+#ifndef _LEDS_
+#define _LEDS_
 
-#include "main.h"
+typedef struct
+{
+  uint8_t Green;
+  uint8_t Red;
+  uint8_t Blue;
+} COLOR_RGB;
 
-//
-// Buffer count MUST be even number
-//
-#define LED_DMA_BUFFER_COUNT 8
-#define LED_DMA_BUFFER_SIZE (LED_BIT_COUNT * LED_DMA_BUFFER_COUNT)
+typedef struct
+{
+  uint8_t LedCount;
+  COLOR_RGB Color;
+  uint8_t TemperatureIndex;
+} LED_SECTION;
 
-#define SECTION_INDEX_DOWN 0
-#define SECTION_INDEX_LEFT 1
-#define SECTION_INDEX_CENTER 2
+typedef struct COLOR_HSV
+{
+  uint8_t h;
+  uint8_t s;
+  uint8_t v;
+} COLOR_HSV;
 
-#define SECTION_INDEX_UP 0
-#define SECTION_INDEX_RIGHT 1
+#define TEMPERATURE_UNCORRECTED 0
+#define TEMPERATURE_CANDLE 1
+#define TEMPERATURE_HALOGEN 2
+#define TEMPERATURE_COOLWHITEFLUORESCENT 3
+#define TEMPERATURE_FULLSPECTRUMFLUORESCENT 4
 
-#define COLOR_INDEX_WHITE 0
-#define COLOR_INDEX_BLUE 1
-#define COLOR_INDEX_RED 2
-#define COLOR_INDEX_GREEN 3
+void InitializeConfigs(uint8_t AmountOfConfigs);
+uint8_t InitializeConfig(uint8_t ConfigIndex, uint8_t AmountOfSections, const uint8_t *LedCounts, uint16_t *Buffer, uint16_t BufferSize);
+LED_SECTION *GetLedSection(uint8_t ConfigIndex, uint8_t SectionIndex);
+uint8_t FillHalfBuffer(uint8_t ConfigIndex);
+uint8_t PrepareBufferForTransaction(uint8_t ConfigIndex);
+void ShowEffectRainbow(uint8_t ConfigIndex, uint8_t ColorStep, uint8_t HueStep);
+void ShowEffectFade(uint8_t ConfigIndex, uint8_t Step);
+COLOR_RGB HsvToRgb(COLOR_HSV hsv);
+COLOR_HSV RgbToHsv(COLOR_RGB rgb);
 
-#define LED_CH1_SECTION_COUNT 3
-#define LED_CH2_SECTION_COUNT 2
-
-//
-// In percents
-//
-#define LED_BRIGHTNESS 25
-
-//
-// Before calling any other function call prepare data first
-//
-void LedInitializeDataForDma();
-
-//
-// To easily change colors of each section call this function to prepare struct for each section
-//
-HAL_StatusTypeDef LedTransferColorsBySectionsCh1(TIM_HandleTypeDef *htim, uint8_t *SectionColors);
-HAL_StatusTypeDef LedTransferColorsBySectionsCh2(TIM_HandleTypeDef *htim, uint8_t *SectionColors);
-void LedHandleDmaCh1Callback(TIM_HandleTypeDef *htim);
-void LedHandleDmaCh2Callback(TIM_HandleTypeDef *htim);
-
-#endif // __LEDS_H__
+#endif // _LEDS_

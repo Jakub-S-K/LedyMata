@@ -1,228 +1,397 @@
+#include <stdint.h>
+#include <memory.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <assert.h>
+
 #include "Leds.h"
 
-#include <memory.h>
-#include <stdint.h>
-
-#define SECTION_UP_LED_COUNT 18
-#define SECTION_DOWN_LED_COUNT 18
-#define SECTION_LEFT_LED_COUNT 18
-#define SECTION_RIGHT_LED_COUNT 18
-#define SECTION_CENTER_LED_COUNT 24
-#define LED_COUNT_CH_1 (SECTION_DOWN_LED_COUNT + SECTION_LEFT_LED_COUNT + SECTION_CENTER_LED_COUNT)
-#define LED_COUNT_CH_2 (SECTION_UP_LED_COUNT + SECTION_RIGHT_LED_COUNT)
-
-#define LED_BIT_COUNT 24
-#define LED_BYTE_COUNT (LED_BIT_COUNT / 8)
-
-#define LED_CH1_SECTION_COUNT 3
-#define LED_CH2_SECTION_COUNT 2
+static COLOR_RGB gTemperatures[] = {{255, 255, 255}, {147, 255, 41}, {241, 255, 224}, {235, 212, 255}, {244, 255, 242}};
+static COLOR_RGB gColorCorrection = {176, 255, 240};
 
 typedef struct
 {
-  uint8_t Green;
-  uint8_t Red;
-  uint8_t Blue;
-} COLOR;
+  uint16_t *Buffer;
+  LED_SECTION *Sections;
+  uint8_t SectionsSize;
+  uint16_t BufferIndex;
+  uint16_t BufferSize;
+  uint8_t LedIndex;
+  uint8_t SectionIndex;
+} LED_CONFIG;
 
-const COLOR gColorTable[] = {{0xFF, 0xFF, 0xFF}, {0, 0, 0xFF}, {0, 0xFF, 0}, {0xFF, 0, 0}};
-uint16_t gLedBufferCh1[LED_DMA_BUFFER_SIZE];
-uint16_t gLedBufferCh2[LED_DMA_BUFFER_SIZE];
-uint8_t gSectionCh1Colors[LED_CH1_SECTION_COUNT];
-uint8_t gSectionCh2Colors[LED_CH2_SECTION_COUNT];
-uint8_t gLedCh1SectionLedCounts[LED_CH1_SECTION_COUNT];
-uint8_t gLedCh2SectionLedCounts[LED_CH2_SECTION_COUNT];
-uint16_t gLedBufferCh1Index;
-uint16_t gLedBufferCh2Index;
-uint8_t gLedDmaCh1Index;
-uint8_t gLedDmaCh2Index;
-uint8_t gStopLedDmaCh1Transffer;
-uint8_t gStopLedDmaCh2Transffer;
+LED_CONFIG *gConfigs = NULL;
+uint8_t gConfigsSize = 0;
+uint8_t gConfigNumber = 0;
+uint8_t gHue = 0;
 
-uint16_t GetCurrentSectionIndex(uint16_t LedIndex, uint8_t Channel)
+#ifdef TAK
+#define PRINT printf
+#define BUFFER_DUMP BufferDump
+#else
+#define PRINT
+#define BUFFER_DUMP
+#endif
+
+#ifdef TAK
+
+void BufferDump(uint8_t ConfigIndex)
 {
-  uint8_t Index;
-  uint16_t MinLedIndex = 0;
-  uint16_t MaxLedIndex;
-  uint16_t MaxIndex;
-  uint8_t *SectionCount;
-
-  if (Channel == TIM_CHANNEL_1) {
-    MaxIndex = LED_CH1_SECTION_COUNT;
-    SectionCount = gLedCh1SectionLedCounts;
-  } else {
-    MaxIndex = LED_CH2_SECTION_COUNT;
-    SectionCount = gLedCh2SectionLedCounts;
-  }
-
-  MaxLedIndex = SectionCount[0];
-  for (Index = 0; Index < MaxIndex; Index++)
+  PRINT("Buffer dump:\n");
+  for (int i = 0; i < gConfigs[ConfigIndex].BufferSize / 24; i++)
   {
-
-    if (LedIndex >= MinLedIndex && LedIndex < MaxLedIndex)
+    PRINT("%1d [", i);
+    for (int j = 0; j < 24; j++)
     {
-      return Index;
+      PRINT("%d:%1d ", j, gConfigs[ConfigIndex].Buffer[i * 24 + j] );
     }
-
-    if (Index + 1 == MaxIndex) {
-      return 0xFF;
-    }
-
-    MinLedIndex += SectionCount[Index];
-    MaxLedIndex += SectionCount[Index + 1];
+    PRINT("\b]\n");
   }
-
-  return 0xFF;
+  PRINT("\n");
 }
 
-HAL_StatusTypeDef PrepareBufferForSingleLed(uint16_t LedIndex, uint8_t LedDmaIndex, uint8_t Channel, uint16_t* LedBuffer, uint8_t* SectionColor)
+#endif
+
+
+void InitializeConfigs(uint8_t AmountOfConfigs)
 {
-  uint8_t SectionIndex = GetCurrentSectionIndex(LedIndex, Channel);
-  uint8_t DmaBufferIndex;
-  uint8_t *ColorTable;
-  uint8_t ColorValue;
-
-  if (SectionIndex == 0xFF) {
-    return HAL_ERROR;
-  }
-
-  ColorTable = (uint8_t *)(&gColorTable[SectionColor[SectionIndex]]);
-  for (DmaBufferIndex = LED_BIT_COUNT * LedDmaIndex; DmaBufferIndex < LED_BIT_COUNT * LedDmaIndex + LED_BIT_COUNT; DmaBufferIndex++)
+  if (gConfigs != NULL)
   {
-    ColorValue = *(ColorTable + ((DmaBufferIndex % LED_BIT_COUNT) / 8));
-    ColorValue = (ColorValue * LED_BRIGHTNESS) / 100;
-    ColorValue = ColorValue >> (7 - (DmaBufferIndex % 8));
-    ColorValue = ((ColorValue & 0x1) * 30) + 30;
-    LedBuffer[DmaBufferIndex] = ColorValue;
+    return;
   }
 
-  return HAL_OK;
+  gConfigs = malloc(sizeof(LED_CONFIG) * AmountOfConfigs);
+  memset(gConfigs, 0, sizeof(LED_CONFIG) * AmountOfConfigs);
+  gConfigsSize = AmountOfConfigs;
 }
 
-HAL_StatusTypeDef LedTransferColorsBySectionsCh1(TIM_HandleTypeDef *htim, uint8_t *SectionColors)
+uint8_t InitializeConfig(uint8_t ConfigIndex, uint8_t AmountOfSections, const uint8_t *LedCounts, uint16_t *Buffer, uint16_t BufferSize)
 {
-  uint8_t Index;
-
-  if (memcmp(SectionColors, gSectionCh1Colors, sizeof(gSectionCh1Colors)) == 0) {
-    return HAL_OK;
+  if (gConfigNumber >= gConfigsSize)
+  {
+    return 1;
   }
 
-  //
-  // It indicates that there is ongoing transfer
-  //
-  if (gLedBufferCh1Index < LED_COUNT_CH_1)
+  if (gConfigs[ConfigIndex].Sections != NULL)
   {
-    return HAL_BUSY;
+    return 2;
   }
 
-  memcpy(gSectionCh1Colors, SectionColors, sizeof(gSectionCh1Colors));
-  gLedDmaCh1Index = 0;
-  gLedBufferCh1Index = 0;
-  for (Index = 0; Index < LED_DMA_BUFFER_COUNT; Index++)
+  gConfigs[ConfigIndex].Sections = malloc(sizeof(LED_SECTION) * AmountOfSections);
+  memset(gConfigs[ConfigIndex].Sections, 0, sizeof(LED_SECTION) * AmountOfSections);
+  for (int Index = 0; Index < AmountOfSections; Index++)
   {
-    if (PrepareBufferForSingleLed(gLedBufferCh1Index, gLedDmaCh1Index, TIM_CHANNEL_1, gLedBufferCh1, gSectionCh1Colors) != HAL_OK)
+    gConfigs[ConfigIndex].Sections[Index].LedCount = LedCounts[Index];
+  }
+  gConfigs[ConfigIndex].SectionsSize = AmountOfSections;
+  gConfigs[ConfigIndex].BufferSize = BufferSize;
+  gConfigs[ConfigIndex].Buffer = Buffer;
+  gConfigNumber++;
+  return 0;
+}
+
+#define BRIGHTNESS 50
+
+LED_SECTION *GetLedSection(uint8_t ConfigIndex, uint8_t SectionIndex)
+{
+  return &gConfigs[ConfigIndex].Sections[SectionIndex];
+}
+
+uint8_t GetPwmValueFromColor(uint8_t ConfigIndex)
+{
+#ifdef TAK
+  static uint8_t PwmValue[2] = {0, 1};
+#else
+  static uint8_t PwmValue[2] = {30, 60};
+#endif
+  uint8_t ColorOffset = (gConfigs[ConfigIndex].BufferIndex % 24) / 8;
+  uint8_t *TempPointer = (uint8_t *)(&(gTemperatures[gConfigs[ConfigIndex].Sections[gConfigs[ConfigIndex].SectionIndex].TemperatureIndex]));
+  uint8_t TemperatureValue = (*(uint8_t *)(TempPointer + ColorOffset));
+  TempPointer = &gColorCorrection;
+  uint8_t CorrectionValue = (*(uint8_t *)(TempPointer + ColorOffset));
+  PRINT("%p %p\n", &(gTemperatures[gConfigs[ConfigIndex].Sections[gConfigs[ConfigIndex].SectionIndex].TemperatureIndex]) + ColorOffset, gTemperatures);
+  PRINT("%d\n", *((uint8_t*)(&(gTemperatures[gConfigs[ConfigIndex].Sections[gConfigs[ConfigIndex].SectionIndex].TemperatureIndex]))));
+  uint32_t ColorByte = *(((uint8_t *)&gConfigs[ConfigIndex].Sections[gConfigs[ConfigIndex].SectionIndex].Color) + ColorOffset);
+  PRINT("ColorByte %d\n", ColorByte);
+  ColorByte = (ColorByte * (uint32_t)(TemperatureValue * BRIGHTNESS * CorrectionValue));
+  ColorByte = ColorByte / ((uint32_t)(255 * 255 * 255));
+  PRINT("Tak %d\n", (uint32_t)(TemperatureValue * BRIGHTNESS));
+  PRINT("Temperature %d\n", (TemperatureValue ));
+  uint8_t ColorBitOffset = 7 - (gConfigs[ConfigIndex].BufferIndex % 8);
+  PRINT("ColorByte %d; ColorBitOffset %d; PwmValue %d;\n", ColorByte, ColorBitOffset, PwmValue[(ColorByte >> ColorBitOffset) & 1]);
+  return PwmValue[(ColorByte >> ColorBitOffset) & 1];
+}
+
+uint8_t FillHalfBuffer(uint8_t ConfigIndex)
+{
+  uint16_t BufferFilled = 0;
+  uint16_t BufferToBeFilled = gConfigs[ConfigIndex].BufferSize / 2;
+  uint16_t BufferSizeIteration = gConfigs[ConfigIndex].BufferIndex;
+  uint8_t ReturnValue = 0;
+
+  if (gConfigs[ConfigIndex].BufferIndex != BufferToBeFilled && gConfigs[ConfigIndex].BufferIndex != 0)
+  {
+    return 2;
+  }
+
+  for (; gConfigs[ConfigIndex].SectionIndex < gConfigs[ConfigIndex].SectionsSize; gConfigs[ConfigIndex].SectionIndex++)
+  {
+    PRINT("Entered\n");
+    PRINT("[%d] LedIndex %d; BufferIndex %d\n", gConfigs[ConfigIndex].SectionIndex, gConfigs[ConfigIndex].LedIndex, gConfigs[ConfigIndex].BufferIndex);
+    for (; gConfigs[ConfigIndex].LedIndex < gConfigs[ConfigIndex].Sections[gConfigs[ConfigIndex].SectionIndex].LedCount; gConfigs[ConfigIndex].LedIndex++)
     {
-      return HAL_ERROR;
+      if (BufferFilled == BufferToBeFilled)
+      {
+        PRINT("Exiting\n");
+        goto end;
+      }
+      if (BufferFilled + 24 > BufferToBeFilled)
+      {
+        BufferSizeIteration += BufferToBeFilled - BufferFilled;
+      }
+      else
+      {
+        BufferSizeIteration += 24;
+      }
+      PRINT("[%d.%d] BufferSizeIteration %d\n", gConfigs[ConfigIndex].SectionIndex, gConfigs[ConfigIndex].LedIndex, BufferSizeIteration);
+      for (; gConfigs[ConfigIndex].BufferIndex < BufferSizeIteration; gConfigs[ConfigIndex].BufferIndex++, BufferFilled++)
+      {
+        PRINT("[%d.%d.%d]\n", gConfigs[ConfigIndex].SectionIndex, gConfigs[ConfigIndex].LedIndex, gConfigs[ConfigIndex].BufferIndex);
+        gConfigs[ConfigIndex].Buffer[gConfigs[ConfigIndex].BufferIndex] = GetPwmValueFromColor(ConfigIndex);
+      }
     }
-    gLedDmaCh1Index = (gLedDmaCh1Index + 1) % LED_DMA_BUFFER_COUNT;
-    gLedBufferCh1Index++;
-  }
-
-  HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_1, (uint32_t*)gLedBufferCh1, LED_DMA_BUFFER_SIZE);
-  return HAL_OK;
-}
-
-HAL_StatusTypeDef LedTransferColorsBySectionsCh2(TIM_HandleTypeDef *htim, uint8_t *SectionColors)
-{
-  uint8_t Index;
-
-  if (memcmp(SectionColors, gSectionCh2Colors, sizeof(gSectionCh2Colors)) == 0) {
-    return HAL_OK;
-  }
-
-  //
-  // It indicates that there is ongoing transfer
-  //
-  if (gLedBufferCh1Index < LED_COUNT_CH_2)
-  {
-    return HAL_BUSY;
-  }
-
-  memcpy(gSectionCh2Colors, SectionColors, sizeof(gSectionCh2Colors));
-  gLedDmaCh2Index = 0;
-  gLedBufferCh2Index = 0;
-  for (Index = 0; Index < LED_DMA_BUFFER_COUNT; Index++)
-  {
-    if (PrepareBufferForSingleLed(gLedBufferCh2Index, gLedDmaCh2Index, TIM_CHANNEL_2, gLedBufferCh2, gSectionCh2Colors) != HAL_OK)
+    if (BufferFilled == BufferToBeFilled)
     {
-      return HAL_ERROR;
+      goto end;
     }
-    gLedDmaCh2Index = (gLedDmaCh2Index + 1) % LED_DMA_BUFFER_COUNT;
-    gLedBufferCh2Index++;
+
+    gConfigs[ConfigIndex].LedIndex = 0;
+  }
+  PRINT("BufferIndex %d; BufferSize %d\n", gConfigs[ConfigIndex].BufferIndex, gConfigs[ConfigIndex].BufferSize);
+  PRINT("%d, %d\n", BufferFilled, BufferToBeFilled);
+
+  if (BufferFilled != BufferToBeFilled) {
+    for (; BufferFilled < BufferToBeFilled; BufferFilled++, gConfigs[ConfigIndex].BufferIndex++) {
+      gConfigs[ConfigIndex].Buffer[gConfigs[ConfigIndex].BufferIndex] = 0;      
+    }
+
+    ReturnValue = 1;
   }
 
-  HAL_TIM_PWM_Start_DMA(htim, TIM_CHANNEL_2, (uint32_t*)gLedBufferCh2, LED_DMA_BUFFER_SIZE);
-  return HAL_OK;
+end:
+  gConfigs[ConfigIndex].BufferIndex %= gConfigs[ConfigIndex].BufferSize;
+  BUFFER_DUMP(ConfigIndex);
+  return ReturnValue;
 }
 
-void LedInitializeDataForDma()
+uint8_t PrepareBufferForTransaction(uint8_t ConfigIndex)
 {
-  memset(gLedBufferCh1, 0, sizeof(gLedBufferCh1));
-  memset(gLedBufferCh2, 0, sizeof(gLedBufferCh2));
-  memset(gSectionCh1Colors, 0, sizeof(gSectionCh1Colors));
-  memset(gSectionCh2Colors, 0, sizeof(gSectionCh2Colors));
-  gLedBufferCh1Index = LED_COUNT_CH_1;
-  gLedBufferCh2Index = LED_COUNT_CH_2;
-  gLedCh1SectionLedCounts[SECTION_INDEX_DOWN] = SECTION_DOWN_LED_COUNT;
-  gLedCh1SectionLedCounts[SECTION_INDEX_LEFT] = SECTION_LEFT_LED_COUNT;
-  gLedCh1SectionLedCounts[SECTION_INDEX_CENTER] = SECTION_CENTER_LED_COUNT;
-  gLedCh2SectionLedCounts[SECTION_INDEX_UP] = SECTION_UP_LED_COUNT;
-  gLedCh2SectionLedCounts[SECTION_INDEX_RIGHT] = SECTION_RIGHT_LED_COUNT;
-  gStopLedDmaCh1Transffer = 0;
-  gStopLedDmaCh2Transffer = 0;
+  uint8_t ReturnValue = 0;
+
+  gConfigs[ConfigIndex].LedIndex = 0;
+  gConfigs[ConfigIndex].SectionIndex = 0;
+  gConfigs[ConfigIndex].BufferIndex = 0;
+  ReturnValue = FillHalfBuffer(ConfigIndex);
+  ReturnValue = FillHalfBuffer(ConfigIndex);
+  return ReturnValue;
 }
 
-void LedHandleDmaCh1Callback(TIM_HandleTypeDef *htim)
-{
-  uint8_t Index;
+void ShowEffectRainbow(uint8_t ConfigIndex, uint8_t ColorStep, uint8_t HueStep) {
+  static uint8_t Hue = 0;
+  uint8_t SectionIndex;
+    for (SectionIndex = 0; SectionIndex < gConfigs[ConfigIndex].SectionsSize; SectionIndex++) {
+      gConfigs[ConfigIndex].Sections[SectionIndex].Color = HsvToRgb ((COLOR_HSV){gHue + SectionIndex * ColorStep, 255, 255});
+    }
+    gHue += HueStep;
+    PrepareBufferForTransaction(0);
+}
 
-  if (gStopLedDmaCh1Transffer)
-  {
-    HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_1);
-    gStopLedDmaCh1Transffer = 0;
-    gLedBufferCh1Index = LED_COUNT_CH_1;
+void ShowEffectFade(uint8_t ConfigIndex, uint8_t Step) {
+  COLOR_HSV HsvColor;
+  uint8_t SectionIndex;
+  for (SectionIndex = 0; SectionIndex < gConfigs[ConfigIndex].SectionsSize; SectionIndex++) {
+    HsvColor = RgbToHsv (gConfigs[ConfigIndex].Sections[SectionIndex].Color);
+    if (HsvColor.v > Step) {
+      HsvColor.v -= Step;
+    } else if (HsvColor.v > 0) {
+      HsvColor.v -= HsvColor.v;
+    }
+    gConfigs[ConfigIndex].Sections[SectionIndex].Color = HsvToRgb(HsvColor);
   }
+  PrepareBufferForTransaction(0);
+}
 
-  for (Index = 0; Index < (LED_DMA_BUFFER_COUNT >> 1); Index++)
-  {
-    if (PrepareBufferForSingleLed(gLedBufferCh1Index, gLedDmaCh1Index, TIM_CHANNEL_1, gLedBufferCh1, gSectionCh1Colors) != HAL_OK)
+COLOR_RGB HsvToRgb(COLOR_HSV hsv)
+{
+    COLOR_RGB rgb;
+    unsigned char region, remainder, p, q, t;
+
+    if (hsv.s == 0)
     {
-      gStopLedDmaCh1Transffer = 1;
-      return;
+        rgb.Red = hsv.v;
+        rgb.Green = hsv.v;
+        rgb.Blue = hsv.v;
+        return rgb;
     }
-    gLedDmaCh1Index = (gLedDmaCh1Index + 1) % LED_DMA_BUFFER_COUNT;
-    gLedBufferCh1Index++;
-  }
-}
 
-void LedHandleDmaCh2Callback(TIM_HandleTypeDef *htim)
-{
-  uint8_t Index;
+    region = hsv.h / 43;
+    remainder = (hsv.h - (region * 43)) * 6;
 
-  if (gStopLedDmaCh2Transffer)
-  {
-    HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_2);
-    gStopLedDmaCh2Transffer = 0;
-    gLedBufferCh2Index = LED_COUNT_CH_2;
-  }
+    p = (hsv.v * (255 - hsv.s)) >> 8;
+    q = (hsv.v * (255 - ((hsv.s * remainder) >> 8))) >> 8;
+    t = (hsv.v * (255 - ((hsv.s * (255 - remainder)) >> 8))) >> 8;
 
-  for (Index = 0; Index < (LED_DMA_BUFFER_COUNT >> 1); Index++)
-  {
-    if (PrepareBufferForSingleLed(gLedBufferCh2Index, gLedDmaCh2Index, TIM_CHANNEL_2, gLedBufferCh2, gSectionCh2Colors) != HAL_OK)
+    switch (region)
     {
-      gStopLedDmaCh2Transffer = 1;
-      return;
+        case 0:
+            rgb.Red = hsv.v; rgb.Green = t; rgb.Blue = p;
+            break;
+        case 1:
+            rgb.Red = q; rgb.Green = hsv.v; rgb.Blue = p;
+            break;
+        case 2:
+            rgb.Red = p; rgb.Green = hsv.v; rgb.Blue = t;
+            break;
+        case 3:
+            rgb.Red = p; rgb.Green = q; rgb.Blue = hsv.v;
+            break;
+        case 4:
+            rgb.Red = t; rgb.Green = p; rgb.Blue = hsv.v;
+            break;
+        default:
+            rgb.Red = hsv.v; rgb.Green = p; rgb.Blue = q;
+            break;
     }
-    gLedDmaCh2Index = (gLedDmaCh2Index + 1) % LED_DMA_BUFFER_COUNT;
-    gLedBufferCh2Index++;
-  }
+
+    return rgb;
 }
+
+COLOR_HSV RgbToHsv(COLOR_RGB rgb)
+{
+    COLOR_HSV hsv;
+    uint8_t rgbMin, rgbMax;
+
+    rgbMin = rgb.Red < rgb.Green ? (rgb.Red < rgb.Blue ? rgb.Red : rgb.Blue) : (rgb.Green < rgb.Blue ? rgb.Green : rgb.Blue);
+    rgbMax = rgb.Red > rgb.Green ? (rgb.Red > rgb.Blue ? rgb.Red : rgb.Blue) : (rgb.Green > rgb.Blue ? rgb.Green : rgb.Blue);
+
+    hsv.v = rgbMax;
+    if (hsv.v == 0)
+    {
+        hsv.h = 0;
+        hsv.s = 0;
+        return hsv;
+    }
+
+    hsv.s = 255 * (int32_t)(rgbMax - rgbMin) / hsv.v;
+    if (hsv.s == 0)
+    {
+        hsv.h = 0;
+        return hsv;
+    }
+
+    if (rgbMax == rgb.Red)
+        hsv.h = 0 + 43 * (rgb.Green - rgb.Blue) / (rgbMax - rgbMin);
+    else if (rgbMax == rgb.Green)
+        hsv.h = 85 + 43 * (rgb.Blue - rgb.Red) / (rgbMax - rgbMin);
+    else
+        hsv.h = 171 + 43 * (rgb.Red - rgb.Green) / (rgbMax - rgbMin);
+
+    return hsv;
+}
+
+#ifdef TAK
+
+void CheckValues(uint8_t LedsAmount, COLOR_RGB* LedColors, uint16_t* Buffer) {
+  uint8_t LedIndex;
+  int8_t BitIndex;
+  uint8_t Index;
+  const uint8_t ColorTable[] = {0, 1};
+  uint8_t ExpectedColor;
+  uint8_t ActualColor;
+  uint8_t ExpectedBufferIndex;
+  uint8_t ActualBufferIndex;
+  uint8_t *Colors = (uint8_t*)(LedColors);
+  uint8_t Failed = 0;
+
+  for (LedIndex = 0; LedIndex < LedsAmount; LedIndex++) {
+    for (Index = 0; Index < 3; Index++) {
+      for (BitIndex = 7; BitIndex >= 0; BitIndex--) {
+        ExpectedBufferIndex = LedIndex * 3 + Index;
+        ActualBufferIndex = (LedIndex * 3 * 8) + (Index * 8) + BitIndex;
+        ExpectedColor = ColorTable[((Colors[ExpectedBufferIndex] >> (7 - BitIndex)) & 0x1)];
+        ActualColor = Buffer[ActualBufferIndex];
+        if (ExpectedColor != ActualColor) {
+          Failed = 1;
+          PRINT("Led[%d] Color[%d] Bit[%d] incorrect should be %d is %d Actual %d Expected %d\n", LedIndex, Index, BitIndex, ExpectedColor , ActualColor, ActualBufferIndex, ExpectedBufferIndex);
+        }
+      }
+    }
+  }
+  assert(Failed == 0);
+}
+
+int main()
+{
+  uint16_t Buffer1[24 * 8];
+  InitializeConfigs(1);
+  uint8_t leds[] = {10, 12, 14, 16};
+  InitializeConfig(0, 4, leds, Buffer1, 8 * 24);
+  COLOR_RGB tak = {150, 160, 170};
+  COLOR_RGB tak1 = {150, 160, 170};
+  COLOR_RGB tak2 = {10, 20, 30};
+  COLOR_RGB tak3 = {12, 18, 15};
+  COLOR_RGB zero = {0, 0, 0};
+  GetLedSection(0, 0)->Color = tak;
+  GetLedSection(0, 1)->Color = tak1;
+  GetLedSection(0, 2)->Color = tak2;
+  GetLedSection(0, 3)->Color = tak3;
+  PrepareBufferForTransaction(0);
+  COLOR_RGB LedColors1[8] = {tak, tak, tak, tak, tak, tak, tak, tak};
+  CheckValues (8, LedColors1, Buffer1);
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors2[8] = {tak, tak, tak1, tak1, tak, tak, tak, tak};
+  CheckValues (8, LedColors2, Buffer1);
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors3[8] = {tak, tak, tak1, tak1, tak1, tak1, tak1, tak1};
+  CheckValues (8, LedColors3, Buffer1);
+
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors4[8] = {tak1, tak1, tak1, tak1, tak1, tak1, tak1, tak1};
+  CheckValues (8, LedColors4, Buffer1);
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors5[8] = {tak1, tak1, tak1, tak1, tak1, tak1, tak2, tak2};
+  CheckValues (8, LedColors5, Buffer1);
+
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors6[8] = {tak2, tak2, tak2, tak2, tak1, tak1, tak2, tak2};
+  CheckValues (8, LedColors6, Buffer1);
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors7[8] = {tak2, tak2, tak2, tak2, tak2, tak2, tak2, tak2};
+  CheckValues (8, LedColors7, Buffer1);
+
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors8[8] = {tak2, tak2, tak2, tak2, tak2, tak2, tak2, tak2};
+  CheckValues (8, LedColors8, Buffer1);
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors9[8] = {tak2, tak2, tak2, tak2, tak3, tak3, tak3, tak3};
+  CheckValues (8, LedColors9, Buffer1);
+
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors10[8] = {tak3, tak3, tak3, tak3, tak3, tak3, tak3, tak3};
+  CheckValues (8, LedColors10, Buffer1);
+  PRINT("End value: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors11[8] = {tak3, tak3, tak3, tak3, tak3, tak3, tak3, tak3};
+  CheckValues (8, LedColors11, Buffer1);
+
+  PRINT("End value 12: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors12[8] = {tak3, tak3, tak3, tak3, tak3, tak3, tak3, tak3};
+  CheckValues (8, LedColors12, Buffer1);
+  PRINT("End value 13: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors13[8] = {tak3, tak3, tak3, tak3, zero, zero, zero, zero};
+  CheckValues (8, LedColors13, Buffer1);
+  PRINT("End value 14: %d\n", FillHalfBuffer(0));
+  COLOR_RGB LedColors14[8] = {zero, zero, zero, zero, zero, zero, zero, zero};
+  CheckValues (8, LedColors14, Buffer1);
+}
+
+#endif
